@@ -1,0 +1,12 @@
+@import '@/index.css';
+
+@layer utilities {
+  .hover-elevate {
+    @apply transition-transform duration-200 ease-out;
+  }
+  
+  .hover-elevate:hover {
+    @apply transform -translate-y-[2px] scale-[1.01];
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+}

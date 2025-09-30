@@ -1,0 +1,594 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* DARK MODE ONLY - PROFESSIONAL SECURITY THEME */
+:root {
+  --button-outline: rgba(255,255,255, .12);
+  --badge-outline: rgba(255,255,255, .08);
+
+  /* Automatic computation of border around primary / danger buttons */
+  --opaque-button-border-intensity: 12; /* In terms of percentages */
+
+  /* Backgrounds applied on top of other backgrounds when hovered/active */
+  --elevate-1: rgba(64, 165, 245, .06);
+  --elevate-2: rgba(64, 165, 245, .12);
+
+  /* Professional Dark Security Color Scheme */
+  --background: 218 23% 6%;
+
+  --foreground: 0 0% 96%;
+
+  --border: 218 20% 14%;
+
+  --card: 218 20% 9%;
+
+  --card-foreground: 0 0% 94%;
+
+  --card-border: 218 18% 16%;
+
+  --sidebar: 218 22% 8%;
+
+  --sidebar-foreground: 0 0% 94%;
+
+  --sidebar-border: 218 20% 13%;
+
+  --sidebar-primary: 210 85% 75%;
+
+  --sidebar-primary-foreground: 218 23% 6%;
+
+  --sidebar-accent: 218 25% 15%;
+
+  --sidebar-accent-foreground: 210 85% 75%;
+
+  --sidebar-ring: 210 85% 75%;
+
+  --popover: 218 20% 9%;
+
+  --popover-foreground: 0 0% 94%;
+
+  --popover-border: 218 18% 16%;
+
+  /* Enhanced Primary Colors with Light Professional Blue */
+  --primary: 210 85% 75%;
+
+  --primary-foreground: 218 23% 6%;
+
+  --secondary: 218 18% 18%;
+
+  --secondary-foreground: 0 0% 88%;
+
+  --muted: 218 20% 12%;
+
+  --muted-foreground: 0 0% 68%;
+
+  --accent: 200 90% 78%;
+
+  --accent-foreground: 218 23% 6%;
+
+  /* Security Status Colors */
+  --destructive: 0 85% 62%;
+
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 142 70% 55%;
+
+  --warning: 35 95% 62%;
+
+  --info: 200 90% 78%;
+
+  /* Security Vulnerability Level Colors */
+  --critical: 0 85% 62%;
+  --critical-foreground: 0 0% 100%;
+  
+  --medium: 30 100% 60%;
+  --medium-foreground: 0 0% 10%;
+  
+  --low: 142 70% 55%;
+  --low-foreground: 0 0% 10%;
+
+  --input: 218 18% 16%;
+  --ring: 210 85% 75%;
+  
+  /* Professional Light Blue Chart Colors */
+  --chart-1: 210 85% 75%;
+  --chart-2: 142 70% 55%;
+  --chart-3: 35 95% 62%;
+  --chart-4: 280 70% 75%;
+  --chart-5: 320 65% 70%;
+
+  /* Professional Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-serif: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+
+  /* Professional Light Blue Highlighting Effects */
+  --highlight-primary: 210 85% 75%;
+  --highlight-accent: 200 90% 78%;
+  --highlight-success: 142 70% 55%;
+  --highlight-warning: 35 95% 62%;
+  --highlight-danger: 0 85% 62%;
+  
+  /* Enhanced Shadows for Depth with Light Blue */
+  --shadow-glow: 0 0 20px hsl(210 85% 75% / 0.15);
+  --shadow-primary: 0 8px 32px hsl(210 85% 75% / 0.12);
+  --shadow-accent: 0 4px 24px hsl(200 90% 78% / 0.10);
+  --radius: 0.8rem;
+  --shadow-2xs: 0px 2px 0px 0px hsl(9, 75%, 61% / 0.00);
+  --shadow-xs: 0px 2px 0px 0px hsl(9, 75%, 61% / 0.00);
+  --shadow-sm: 0px 2px 0px 0px hsl(9, 75%, 61% / 0.00), 0px 1px 2px -1px hsl(9, 75%, 61% / 0.00);
+  --shadow: 0px 2px 0px 0px hsl(9, 75%, 61% / 0.00), 0px 1px 2px -1px hsl(9, 75%, 61% / 0.00);
+  --shadow-md: 0px 2px 0px 0px hsl(9, 75%, 61% / 0.00), 0px 2px 4px -1px hsl(9, 75%, 61% / 0.00);
+  --shadow-lg: 0px 2px 0px 0px hsl(9, 75%, 61% / 0.00), 0px 4px 6px -1px hsl(9, 75%, 61% / 0.00);
+  --shadow-xl: 0px 2px 0px 0px hsl(9, 75%, 61% / 0.00), 0px 8px 10px -1px hsl(9, 75%, 61% / 0.00);
+  --shadow-2xl: 0px 2px 0px 0px hsl(9, 75%, 61% / 0.00);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+
+  /* Automatically computed borders - intensity can be controlled by the user by the --opaque-button-border-intensity setting */
+
+  /* Fallback for older browsers */
+  --sidebar-primary-border: hsl(var(--sidebar-primary));
+  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --sidebar-accent-border: hsl(var(--sidebar-accent));
+  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --primary-border: hsl(var(--primary));
+  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --secondary-border: hsl(var(--secondary));
+  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --muted-border: hsl(var(--muted));
+  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --accent-border: hsl(var(--accent));
+  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --destructive-border: hsl(var(--destructive));
+  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+}
+
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+
+  /* Force dark mode globally */
+  html {
+    color-scheme: dark;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  /* Enhanced focus states with professional glow */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-offset-2 ring-offset-background;
+    transition: all 150ms ease-in-out;
+    box-shadow: var(--shadow-glow);
+  }
+}
+
+/**
+ * Using the elevate system.
+ * Automatic contrast adjustment.
+ *
+ * <element className="hover-elevate" />
+ * <element className="active-elevate-2" />
+ *
+ * // Using the tailwind utility when a data attribute is "on"
+ * <element className="toggle-elevate data-[state=on]:toggle-elevated" />
+ * // Or manually controlling the toggle state
+ * <element className="toggle-elevate toggle-elevated" />
+ *
+ * Elevation systems have to handle many states.
+ * - not-hovered, vs. hovered vs. active  (three mutually exclusive states)
+ * - toggled or not
+ * - focused or not (this is not handled with these utilities)
+ *
+ * Even without handling focused or not, this is six possible combinations that
+ * need to be distinguished from eachother visually.
+ */
+@layer utilities {
+
+  /* Hide ugly search cancel button in Chrome until we can style it properly */
+  input[type="search"]::-webkit-search-cancel-button {
+    @apply hidden;
+  }
+
+  /* Placeholder styling for contentEditable div */
+  [contenteditable][data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: hsl(var(--muted-foreground));
+    pointer-events: none;
+  }
+
+  /* .no-default-hover-elevate/no-default-active-elevate is an escape hatch so consumers of
+   * buttons/badges can remove the automatic brightness adjustment on interactions
+   * and program their own. */
+  .no-default-hover-elevate {}
+
+  .no-default-active-elevate {}
+
+
+  /**
+   * Toggleable backgrounds go behind the content. Hoverable/active goes on top.
+   * This way they can stack/compound. Both will overlap the parent's borders!
+   * So borders will be automatically adjusted both on toggle, and hover/active,
+   * and they will be compounded.
+   */
+  .toggle-elevate::before,
+  .toggle-elevate-2::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    /*border-radius: inherit;   match rounded corners */
+    border-radius: inherit;
+    z-index: -1;
+    /* sits behind content but above backdrop */
+  }
+
+  .toggle-elevate.toggle-elevated::before {
+    background-color: var(--elevate-2);
+  }
+
+  /* If there's a 1px border, adjust the inset so that it covers that parent's border */
+  .border.toggle-elevate::before {
+    inset: -1px;
+  }
+
+  /* Does not work on elements with overflow:hidden! */
+  .hover-elevate:not(.no-default-hover-elevate),
+  .active-elevate:not(.no-default-active-elevate),
+  .hover-elevate-2:not(.no-default-hover-elevate),
+  .active-elevate-2:not(.no-default-active-elevate) {
+    position: relative;
+    z-index: 0;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate)::after,
+  .active-elevate:not(.no-default-active-elevate)::after,
+  .hover-elevate-2:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:not(.no-default-active-elevate)::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    /*border-radius: inherit;   match rounded corners */
+    border-radius: inherit;
+    z-index: 999;
+    /* sits in front of content */
+  }
+
+  .hover-elevate:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-1);
+  }
+
+  .hover-elevate-2:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-2);
+  }
+
+  /* If there's a 1px border, adjust the inset so that it covers that parent's border */
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate-2:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
+    inset: -1px;
+  }
+
+  /* Professional Animation Enhancements */
+  
+  /* Smooth slide-in animation for elements */
+  .slide-in {
+    animation: slideIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  }
+
+  .slide-in-delay {
+    animation: slideIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.2s forwards;
+    opacity: 0;
+  }
+
+  /* Fade in animation with slight scale */
+  .fade-in-scale {
+    animation: fadeInScale 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  }
+
+  /* Bounce in animation for buttons */
+  .bounce-in {
+    animation: bounceIn 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  }
+
+  /* Floating animation for hero elements */
+  .float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  /* Pulse animation for loading states */
+  .pulse-glow {
+    animation: pulseGlow 2s ease-in-out infinite;
+  }
+
+  /* Enhanced hover scale animation */
+  .hover-scale {
+    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  .hover-scale:hover {
+    transform: scale(1.02);
+  }
+
+  /* Smooth backdrop blur animation */
+  .backdrop-blur-animate {
+    backdrop-filter: blur(0px);
+    transition: backdrop-filter 0.3s ease-in-out;
+  }
+
+  .backdrop-blur-animate.active {
+    backdrop-filter: blur(12px);
+  }
+
+  /* Loading spinner */
+  .spinner {
+    animation: spin 1s linear infinite;
+  }
+
+  /* Stagger animation for lists */
+  .stagger-animation {
+    animation: slideInStagger 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  }
+
+  /* Success ripple effect */
+  .success-ripple {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .success-ripple::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(34, 197, 94, 0.3);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+  }
+
+  .success-ripple.triggered::after {
+    width: 300px;
+    height: 300px;
+  }
+
+  /* Professional Highlighting Classes */
+  .highlight-primary {
+    background: linear-gradient(135deg, hsl(var(--highlight-primary) / 0.1), hsl(var(--highlight-primary) / 0.05));
+    border: 1px solid hsl(var(--highlight-primary) / 0.2);
+    box-shadow: 0 0 20px hsl(var(--highlight-primary) / 0.08);
+  }
+
+  .highlight-accent {
+    background: linear-gradient(135deg, hsl(var(--highlight-accent) / 0.1), hsl(var(--highlight-accent) / 0.05));
+    border: 1px solid hsl(var(--highlight-accent) / 0.2);
+    box-shadow: 0 0 16px hsl(var(--highlight-accent) / 0.08);
+  }
+
+  .highlight-success {
+    background: linear-gradient(135deg, hsl(var(--highlight-success) / 0.1), hsl(var(--highlight-success) / 0.05));
+    border: 1px solid hsl(var(--highlight-success) / 0.2);
+    box-shadow: 0 0 12px hsl(var(--highlight-success) / 0.08);
+  }
+
+  .highlight-warning {
+    background: linear-gradient(135deg, hsl(var(--highlight-warning) / 0.1), hsl(var(--highlight-warning) / 0.05));
+    border: 1px solid hsl(var(--highlight-warning) / 0.2);
+    box-shadow: 0 0 14px hsl(var(--highlight-warning) / 0.08);
+  }
+
+  .highlight-danger {
+    background: linear-gradient(135deg, hsl(var(--highlight-danger) / 0.1), hsl(var(--highlight-danger) / 0.05));
+    border: 1px solid hsl(var(--highlight-danger) / 0.2);
+    box-shadow: 0 0 16px hsl(var(--highlight-danger) / 0.08);
+  }
+
+  /* Text highlighting effects */
+  .text-highlight-primary {
+    color: hsl(var(--highlight-primary));
+    text-shadow: 0 0 8px hsl(var(--highlight-primary) / 0.3);
+  }
+
+  .text-highlight-accent {
+    color: hsl(var(--highlight-accent));
+    text-shadow: 0 0 8px hsl(var(--highlight-accent) / 0.3);
+  }
+
+  .text-highlight-success {
+    color: hsl(var(--highlight-success));
+    text-shadow: 0 0 6px hsl(var(--highlight-success) / 0.3);
+  }
+
+  .text-highlight-warning {
+    color: hsl(var(--highlight-warning));
+    text-shadow: 0 0 6px hsl(var(--highlight-warning) / 0.3);
+  }
+
+  .text-highlight-danger {
+    color: hsl(var(--highlight-danger));
+    text-shadow: 0 0 8px hsl(var(--highlight-danger) / 0.3);
+  }
+
+  /* Enhanced glow effects */
+  .glow-primary {
+    box-shadow: 0 0 30px hsl(var(--primary) / 0.4), 0 0 60px hsl(var(--primary) / 0.2);
+  }
+
+  .glow-accent {
+    box-shadow: 0 0 25px hsl(var(--accent) / 0.4), 0 0 50px hsl(var(--accent) / 0.2);
+  }
+
+  .glow-success {
+    box-shadow: 0 0 20px hsl(var(--success) / 0.4), 0 0 40px hsl(var(--success) / 0.2);
+  }
+
+  /* Security Vulnerability Level Glow Effects */
+  .glow-critical {
+    box-shadow: 0 0 20px hsl(var(--critical) / 0.4), 0 0 40px hsl(var(--critical) / 0.2);
+  }
+
+  .glow-medium {
+    box-shadow: 0 0 20px hsl(var(--medium) / 0.4), 0 0 40px hsl(var(--medium) / 0.2);
+  }
+
+  .glow-low {
+    box-shadow: 0 0 20px hsl(var(--low) / 0.4), 0 0 40px hsl(var(--low) / 0.2);
+  }
+
+  /* Professional gradient backgrounds */
+  .bg-gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary) / 0.8), hsl(var(--primary) / 0.6));
+  }
+
+  .bg-gradient-accent {
+    background: linear-gradient(135deg, hsl(var(--accent) / 0.8), hsl(var(--accent) / 0.6));
+  }
+
+  .bg-gradient-card {
+    background: linear-gradient(135deg, hsl(var(--card)), hsl(var(--card) / 0.8));
+    backdrop-filter: blur(20px);
+  }
+
+  /* Enhanced borders with glow */
+  .border-glow-primary {
+    border: 1px solid hsl(var(--primary) / 0.4);
+    box-shadow: inset 0 0 10px hsl(var(--primary) / 0.1), 0 0 10px hsl(var(--primary) / 0.2);
+  }
+
+  .border-glow-accent {
+    border: 1px solid hsl(var(--accent) / 0.4);
+    box-shadow: inset 0 0 8px hsl(var(--accent) / 0.1), 0 0 8px hsl(var(--accent) / 0.2);
+  }
+}
+
+/* Professional Keyframe Animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bounceIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 5px hsl(var(--primary) / 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.8), 0 0 30px hsl(var(--primary) / 0.4);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes slideInStagger {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Scroll-based animations */
+@media (prefers-reduced-motion: no-preference) {
+  .scroll-fade-in {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+  }
+
+  .scroll-fade-in.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
