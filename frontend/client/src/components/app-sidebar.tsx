@@ -104,7 +104,7 @@ export function AppSidebar() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className="h-6 w-6 text-primary" />
-              <span className="font-semibold text-lg">SecureScan</span>
+              <span className="font-semibold text-lg">ReVAMP</span>
             </div>
             {/* Toggle button inside sidebar to close it */}
             <Button

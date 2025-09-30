@@ -120,7 +120,7 @@ export function Features() {
               <div className="space-y-4">
                 <h3 className="text-2xl font-bold">Ready to Secure Your Code?</h3>
                 <p className="text-muted-foreground">
-                  Join thousands of developers who trust SecureScan to protect their applications. 
+                  Join thousands of developers who trust ReVAMP to protect their applications. 
                   Start scanning your repositories in under 60 seconds.
                 </p>
               </div>

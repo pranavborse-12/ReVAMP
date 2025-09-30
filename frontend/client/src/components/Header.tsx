@@ -14,7 +14,7 @@ export function Header() {
           {/* Brand / Logo */}
           <div className="flex items-center gap-2">
             <Shield className="h-8 w-8 text-primary glow-primary" aria-hidden="true" />
-            <span className="text-2xl font-bold text-highlight-primary">SecureScan</span>
+            <span className="text-2xl font-bold text-highlight-primary">ReVAMP</span>
           </div>
 
           {/* GitHub Sign-in Button */}
