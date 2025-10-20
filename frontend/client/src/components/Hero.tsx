@@ -49,7 +49,7 @@ export function Hero() {
                 data-testid="button-get-started"
               >
                 <Github className="h-5 w-5" />
-                Get Started with GitHub
+                Get Started with ReVAMP
                 <ArrowRight className="h-4 w-4" />
               </Button>
 
