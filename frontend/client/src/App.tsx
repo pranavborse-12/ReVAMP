@@ -6,6 +6,7 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import { Toaster } from "./components/ui/toaster";
 import { TooltipProvider } from "./components/ui/tooltip";
 import VerifyPage from "./components/VerifyPage";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthProvider } from "./context/AuthProvider";
 import { queryClient } from "./lib/queryClient";
 import Dashboard from "./pages/dashboard";
@@ -19,9 +20,18 @@ function Router() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public Routes */}
         <Route path="/" element={<Home />} />
         <Route path="/verify" element={<VerifyPage />} />
-        <Route element={<Layout />}>
+        
+        {/* Protected Routes - wrapped in Layout */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/repositories" element={<RepositoriesPage />} />
           <Route path="/vulnerabilities" element={<div>Vulnerabilities</div>} />
@@ -31,6 +41,8 @@ function Router() {
           <Route path="/docs" element={<div>Documentation</div>} />
           <Route path="/settings" element={<div>Settings</div>} />
         </Route>
+        
+        {/* 404 Page */}
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>

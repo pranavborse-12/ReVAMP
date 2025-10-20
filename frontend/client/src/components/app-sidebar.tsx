@@ -10,7 +10,8 @@ import {
     Settings,
     Shield,
     XCircle,
-    PanelLeft
+    PanelLeft,
+    LogOut
 } from "lucide-react"
 import { NavLink } from "react-router-dom"
 import { cn } from "../lib/utils"
@@ -27,8 +28,10 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
+    SidebarFooter,
     useSidebar,
 } from "./ui/sidebar"
+import { useAuth } from "../context/AuthProvider"
 
 const dashboardItems = [
   { title: "Overview", url: "/dashboard", icon: BarChart3, badge: null },
@@ -84,6 +87,15 @@ const getStatusColor = (status: string) => {
 
 export function AppSidebar() {
   const { open, setOpen } = useSidebar()
+  const { logout, user } = useAuth()
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+    } catch (error) {
+      console.error("Logout failed:", error)
+    }
+  }
 
   return (
     <>
@@ -228,6 +240,32 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup> */}
         </SidebarContent>
+
+        {/* Logout Section at Bottom */}
+        <SidebarFooter className="p-4 border-t">
+          <div className="space-y-2">
+            {/* User Info */}
+            {user && (
+              <div className="px-2 py-1">
+                <p className="text-xs text-muted-foreground truncate">
+                  {user.email}
+                </p>
+              </div>
+            )}
+            
+            <Separator />
+            
+            {/* Logout Button */}
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={handleLogout}
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Logout</span>
+            </Button>
+          </div>
+        </SidebarFooter>
       </Sidebar>
     </>
   )

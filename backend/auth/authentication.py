@@ -1,4 +1,7 @@
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, status, Request
+
+from backend.database.config import AsyncSessionLocal
+from backend.database.service import DatabaseService
+from fastapi import HTTPException, Depends, status, Request
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -27,6 +30,7 @@ from dataclasses import dataclass, asdict
 from threading import Lock
 import re
 from functools import wraps
+from fastapi import APIRouter, BackgroundTasks
 
 # Load environment variables
 load_dotenv()
@@ -52,7 +56,6 @@ class Config:
     HOST_URL = os.getenv("HOST_URL", "http://localhost:8000")
     FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
     DASHBOARD_URL = os.getenv("DASHBOARD_URL", "http://localhost:3001")
-    # DASHBOARD_URL is read from environment; default kept above
     
     # JWT Configuration
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", secrets.token_urlsafe(64))
@@ -150,7 +153,7 @@ class Session:
 class OAuthState:
     state: str
     redirect_to: str
-    user_email: Optional[str] = None  # Store email for GitHub OAuth flow
+    user_email: Optional[str] = None
     created_at: datetime = None
     used: bool = False
 
@@ -192,12 +195,14 @@ class SecureInMemoryStore:
         self.blacklisted_tokens: Set[str] = set()
         self._lock = asyncio.Lock()
         self.persistence_file = persistence_file
+        self.db_sync_enabled = True  # NEW: Enable database sync
 
+        # Load from pickle first (backwards compatibility)
         if self.persistence_file and Config.ENABLE_PERSISTENCE:
             self._load_from_disk()
 
     def _load_from_disk(self):
-        """Load data from disk if persistence file exists"""
+        """Load data from pickle file (existing functionality)"""
         try:
             if os.path.exists(self.persistence_file):
                 with open(self.persistence_file, 'rb') as f:
@@ -208,18 +213,48 @@ class SecureInMemoryStore:
                 self.rate_limits = data.get('rate_limits', {})
                 self.refresh_tokens = data.get('refresh_tokens', {})
                 self.blacklisted_tokens = data.get('blacklisted_tokens', set())
-                
-                # Schedule cleanup for next event loop iteration
-                asyncio.get_event_loop().create_task(self._cleanup_expired_data())
                 logger.info(f"Loaded persisted data: {len(self.users)} users, {len(self.sessions)} sessions")
         except Exception as e:
             logger.warning(f"Failed to load persisted data: {e}")
 
+    async def _sync_to_database(self):
+        """NEW: Sync all data to PostgreSQL database"""
+        if not self.db_sync_enabled:
+            return
+        
+        try:
+            async with AsyncSessionLocal() as db:
+                # Sync all users to database
+                for email, user in self.users.items():
+                    db_user = await DatabaseService.get_user_by_email(db, email)
+                    
+                    if not db_user:
+                        # Create new user in database
+                        await DatabaseService.create_user(
+                            db=db,
+                            email=user.email,
+                            github_id=user.github_id,
+                            email_verified=user.email_verified
+                        )
+                    else:
+                        # Update existing user
+                        await DatabaseService.update_user_login(
+                            db=db,
+                            email=user.email,
+                            ip_address=None
+                        )
+                
+                await db.commit()
+                logger.info(f"✅ Synced {len(self.users)} users to database")
+        except Exception as e:
+            logger.error(f"❌ Database sync error: {e}")
+
     async def _save_to_disk(self):
-        """Save data to disk for persistence"""
+        """Save data to disk (existing + database sync)"""
         if not self.persistence_file or not Config.ENABLE_PERSISTENCE:
             return
         try:
+            # Save to pickle file (existing)
             data = {
                 'users': self.users,
                 'sessions': self.sessions,
@@ -231,11 +266,14 @@ class SecureInMemoryStore:
             }
             with open(self.persistence_file, 'wb') as f:
                 pickle.dump(data, f)
+            
+            # NEW: Also sync to database
+            await self._sync_to_database()
         except Exception as e:
-            logger.error(f"Failed to save data to disk: {e}")
+            logger.error(f"Failed to save data: {e}")
 
     async def _cleanup_expired_data(self):
-        """Clean up expired data"""
+        """Clean up expired data (existing functionality)"""
         async with self._lock:
             current_time = datetime.utcnow()
             
@@ -276,35 +314,80 @@ class SecureInMemoryStore:
                            f"{len(expired_limits)} rate limits, {len(expired_refresh)} refresh tokens")
                 await self._save_to_disk()
 
-    # User operations
+    # User operations (UPDATED with database sync)
     async def create_user(self, email: str, github_id: Optional[str] = None) -> User:
-        """Create a new user"""
+        """Create a new user (memory + database)"""
         async with self._lock:
             if email in self.users:
                 raise ValueError("User already exists")
+            
+            # Create in memory
             user = User(email=email, github_id=github_id)
             self.users[email] = user
+            
+            # NEW: Sync to database
+            if self.db_sync_enabled:
+                try:
+                    async with AsyncSessionLocal() as db:
+                        await DatabaseService.create_user(
+                            db=db,
+                            email=email,
+                            github_id=github_id,
+                            email_verified=False
+                        )
+                        await db.commit()
+                        logger.info(f"✅ User created in database: {email}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to create user in database: {e}")
+            
             await self._save_to_disk()
             return user
 
-    async def get_user(self, email: str) -> Optional[User]:
-        """Get user by email"""
-        return self.users.get(email)
-
     async def update_user(self, email: str, **kwargs) -> Optional[User]:
-        """Update user"""
+        """Update user (memory + database)"""
         async with self._lock:
             if email not in self.users:
                 return None
+            
             user = self.users[email]
             for key, value in kwargs.items():
                 if hasattr(user, key):
                     setattr(user, key, value)
             user.updated_at = datetime.utcnow()
+            
+            # NEW: Sync to database
+            if self.db_sync_enabled:
+                try:
+                    async with AsyncSessionLocal() as db:
+                        # Update user in database
+                        db_user = await DatabaseService.get_user_by_email(db, email)
+                        if db_user:
+                            # Map dataclass fields to database fields
+                            db_updates = {}
+                            if 'github_id' in kwargs:
+                                db_updates['github_id'] = kwargs['github_id']
+                            if 'email_verified' in kwargs:
+                                db_updates['email_verified'] = kwargs['email_verified']
+                            if 'last_login' in kwargs:
+                                db_updates['last_login'] = kwargs['last_login']
+                            
+                            # Update using raw query for simplicity
+                            for key, value in db_updates.items():
+                                setattr(db_user, key, value)
+                            
+                            await db.commit()
+                            logger.info(f"✅ User updated in database: {email}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to update user in database: {e}")
+            
             await self._save_to_disk()
             return user
 
-    # Session operations
+    # Keep all other methods unchanged (get_user, create_session, etc.)
+    async def get_user(self, email: str) -> Optional[User]:
+        """Get user by email"""
+        return self.users.get(email)
+
     async def create_session(self, session: Session) -> None:
         """Create a new session"""
         async with self._lock:
@@ -334,7 +417,6 @@ class SecureInMemoryStore:
                 del self.sessions[session_id]
                 await self._save_to_disk()
 
-    # OAuth state operations
     async def create_oauth_state(self, state: OAuthState) -> None:
         """Create OAuth state"""
         async with self._lock:
@@ -352,7 +434,6 @@ class SecureInMemoryStore:
                 self.oauth_states[state].used = True
                 await self._save_to_disk()
 
-    # Rate limiting operations
     async def get_rate_limit(self, identifier: str) -> Optional[RateLimitEntry]:
         """Get rate limit entry"""
         return self.rate_limits.get(identifier)
@@ -363,7 +444,6 @@ class SecureInMemoryStore:
             self.rate_limits[entry.identifier] = entry
             await self._save_to_disk()
 
-    # Refresh token operations
     async def create_refresh_token(self, token: RefreshToken) -> None:
         """Create refresh token"""
         async with self._lock:
@@ -381,7 +461,6 @@ class SecureInMemoryStore:
                 self.refresh_tokens[token_id].is_revoked = True
                 await self._save_to_disk()
 
-    # Token blacklist
     async def blacklist_token(self, token: str) -> None:
         """Add token to blacklist"""
         async with self._lock:
@@ -392,8 +471,10 @@ class SecureInMemoryStore:
         """Check if token is blacklisted"""
         return token in self.blacklisted_tokens
 
-# Initialize store
-store = SecureInMemoryStore(Config.PERSISTENCE_FILE)
+store = SecureInMemoryStore(
+    persistence_file=Config.PERSISTENCE_FILE if Config.ENABLE_PERSISTENCE else None
+)
+logger.info(f"✅ Initialized in-memory store (persistence: {Config.ENABLE_PERSISTENCE})")
 
 # ----------------- Security Utilities -----------------
 class SecurityUtils:
@@ -869,53 +950,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     
     return payload
 
-# ----------------- Background Tasks -----------------
-async def cleanup_task():
-    """Periodic cleanup of expired data"""
-    while True:
-        try:
-            await store._cleanup_expired_data()
-            await asyncio.sleep(3600)  # Run every hour
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Cleanup task error: {e}")
-            await asyncio.sleep(300)  # Wait 5 minutes on error
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan management"""
-    # Startup
-    logger.info("Starting SecureScan Auth API...")
-    
-    # Initial cleanup of expired data
-    await store._cleanup_expired_data()
-    
-    # Start background cleanup task
-    cleanup_task_handle = asyncio.create_task(cleanup_task())
-    
-    yield
-    
-    # Shutdown
-    logger.info("Shutting down SecureScan Auth API...")
-    cleanup_task_handle.cancel()
-    try:
-        await cleanup_task_handle
-    except asyncio.CancelledError:
-        pass
-
-# ----------------- FastAPI Application -----------------
-app = FastAPI(
-    title="SecureScan Auth API",
-    description="Secure authentication service with GitHub OAuth and email verification",
-    version="2.0.0",
-    lifespan=lifespan,
-    docs_url="/docs" if Config.DEBUG else None,
-    redoc_url="/redoc" if Config.DEBUG else None,
-)
-
-# Create router instead of FastAPI app
-from fastapi import APIRouter
+# ----------------- Create Router -----------------
 router = APIRouter()
 
 # ----------------- API Routes -----------------
@@ -941,7 +976,7 @@ async def health_check():
         "environment": Config.ENVIRONMENT
     }
 
-@router.post("/auth/initiate", response_model=dict)
+@router.post("/initiate", response_model=dict)
 async def initiate_auth(
     request: EmailRequest,
     background_tasks: BackgroundTasks,
@@ -991,7 +1026,7 @@ async def initiate_auth(
         "message": f"Verification code sent to {SecurityUtils.mask_email(email)}"
     }
 
-@router.post("/auth/verify", response_model=TokenResponse)
+@router.post("/verify", response_model=TokenResponse)
 async def verify_auth(
     request: VerifyRequest,
     http_request: Request
@@ -1064,9 +1099,7 @@ async def verify_auth(
 
 @router.get("/github/login")
 async def github_login(request: Request, redirect_to: str = "/"):
-    """
-    Initiate GitHub OAuth flow
-    """
+    """Initiate GitHub OAuth flow"""
     # Validate GitHub OAuth configuration
     if not Config.GITHUB_CLIENT_ID:
         raise HTTPException(
@@ -1092,16 +1125,8 @@ async def github_login(request: Request, redirect_to: str = "/"):
         "&scope=user:email"
     )
     
+    logger.info(f"Initiating GitHub OAuth with state: {state[:8]}...")
     return RedirectResponse(url=github_auth_url)
-
-# Keep old route for backward compatibility
-@router.get("/github")
-async def github_oauth_legacy(request: Request, redirect_to: str = "/"):
-    """Legacy route - redirects to new /auth/github/login endpoint"""
-    return RedirectResponse(
-        url=f"/auth/github/login?redirect_to={quote(redirect_to)}",
-        status_code=status.HTTP_307_TEMPORARY_REDIRECT
-    )
 
 @router.get("/github/callback")
 async def github_oauth_callback(
@@ -1110,139 +1135,191 @@ async def github_oauth_callback(
     error: Optional[str] = None,
     request: Request = None
 ):
-    """Handle GitHub OAuth callback"""
+    """Handle GitHub OAuth callback with database persistence"""
     try:
+        # Handle OAuth errors
         if error:
             logger.error(f"GitHub OAuth error: {error}")
-            return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=oauth_error")
+            return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error={error}")
         
+        # Validate required parameters
         if not code or not state:
+            logger.error("Missing code or state parameter")
             return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=invalid_request")
         
-        # Verify state
+        # Verify state token
         oauth_state = await store.get_oauth_state(state)
-        if not oauth_state or oauth_state.used:
+        if not oauth_state:
+            logger.error(f"Invalid OAuth state: {state}")
             return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=invalid_state")
+        
+        if oauth_state.used:
+            logger.error(f"OAuth state already used: {state}")
+            return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=state_reused")
+        
+        # Check state expiration (10 minutes)
+        if datetime.utcnow() - oauth_state.created_at > timedelta(minutes=10):
+            logger.error(f"OAuth state expired: {state}")
+            return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=state_expired")
         
         # Mark state as used
         await store.mark_oauth_state_used(state)
         
-        # Exchange code for GitHub token
+        # Exchange authorization code for access token
+        logger.info("Exchanging code for GitHub access token")
         github_token = await GitHubClient.exchange_code_for_token(code)
         if not github_token:
-            return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=oauth_failed")
+            logger.error("Failed to exchange code for token")
+            return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=token_exchange_failed")
         
         # Get user info from GitHub
+        logger.info("Fetching user info from GitHub")
         github_user = await GitHubClient.get_user_info(github_token)
         if not github_user or not github_user.get("email"):
+            logger.error("Failed to get user email from GitHub")
             return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=email_required")
         
+        # Process user data
         email = github_user["email"].lower().strip()
         github_id = github_user["github_id"]
+        github_login = github_user.get("login")
+        name = github_user.get("name")
+        avatar_url = github_user.get("avatar_url")
         
-        # Create or update user
+        logger.info(f"GitHub user authenticated: {SecurityUtils.mask_email(email)}")
+        
+        # Get client IP for logging
+        client_ip = get_client_identifier(request)
+        
+        # Create or update user in BOTH memory and database
         user = await store.get_user(email)
-        if not user:
-            user = await store.create_user(email, github_id=github_id)
-        else:
-            await store.update_user(email, github_id=github_id)
+        is_new_user = user is None
         
-        # Generate tokens with GitHub token included in payload
+        if not user:
+            logger.info(f"Creating new user: {SecurityUtils.mask_email(email)}")
+            # This will create in both memory AND database
+            user = await store.create_user(email, github_id=github_id)
+            await store.update_user(
+                email,
+                email_verified=True,
+                last_login=datetime.utcnow()
+            )
+        else:
+            logger.info(f"Updating existing user: {SecurityUtils.mask_email(email)}")
+            # This will update in both memory AND database
+            await store.update_user(
+                email,
+                github_id=github_id,
+                email_verified=True,
+                last_login=datetime.utcnow(),
+                login_attempts=0
+            )
+        
+        # ALSO: Direct database update with full GitHub info
+        try:
+            async with AsyncSessionLocal() as db:
+                db_user, created = await DatabaseService.get_or_create_user_by_github(
+                    db=db,
+                    email=email,
+                    github_id=github_id,
+                    github_login=github_login,
+                    name=name,
+                    avatar_url=avatar_url
+                )
+                
+                # Log audit event
+                await DatabaseService.log_audit_event(
+                    db=db,
+                    action="GITHUB_OAUTH_SUCCESS",
+                    resource="users",
+                    success=True,
+                    user_email=email,
+                    ip_address=client_ip,
+                    user_agent=get_user_agent(request),
+                    meta_data={
+                        "github_id": github_id,
+                        "github_login": github_login,
+                        "is_new_user": created
+                    }
+                )
+                
+                await db.commit()
+                logger.info(f"✅ User {'created' if created else 'updated'} in database: {SecurityUtils.mask_email(email)}")
+        except Exception as db_error:
+            logger.error(f"❌ Database operation failed: {db_error}")
+            # Don't fail the login, just log the error
+        
+        # Generate JWT tokens
         access_token = JWTManager.create_access_token({
             "sub": email,
             "verified": True,
-            "github_token": github_token,
-            "github_id": github_id
+            "github_id": github_id,
+            "provider": "github"
         })
         refresh_token = await JWTManager.create_refresh_token(email)
         
-        # Create response with cookies
-        response = RedirectResponse(url=f"{Config.DASHBOARD_URL}/dashboard")
+        # Determine redirect URL
+        redirect_url = oauth_state.redirect_to
+        if not redirect_url or redirect_url == "/":
+            redirect_url = f"{Config.DASHBOARD_URL}/dashboard"
+        else:
+            if not redirect_url.startswith("http"):
+                redirect_url = f"{Config.DASHBOARD_URL}{redirect_url}"
         
-        # Set cookie settings based on environment
+        logger.info(f"Redirecting to: {redirect_url}")
+        
+        # Create response with redirect
+        response = RedirectResponse(url=redirect_url, status_code=303)
+        
+        # Cookie settings
+        is_production = Config.ENVIRONMENT == "production"
         cookie_settings = {
             "httponly": True,
-            "secure": Config.ENVIRONMENT == "production",
-            "samesite": "lax",  # Changed from strict for better compatibility
-            "path": "/"  # Ensure cookies are available across all paths
+            "secure": is_production,
+            "samesite": "lax",
+            "path": "/"
         }
         
-        # Set JWT and GitHub tokens as cookies
+        # Set authentication cookies
         response.set_cookie(
             key="access_token",
             value=access_token,
             max_age=Config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             **cookie_settings
         )
+        
         response.set_cookie(
             key="refresh_token",
             value=refresh_token,
             max_age=Config.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
             **cookie_settings
         )
+        
         response.set_cookie(
             key="github_access_token",
             value=github_token,
             max_age=int(os.getenv("GITHUB_TOKEN_EXPIRE_MINUTES", "480")) * 60,
             **cookie_settings
         )
-
-        logger.info(f"GitHub OAuth successful for {SecurityUtils.mask_email(email)}")
+        
+        response.set_cookie(
+            key="user_email",
+            value=email,
+            max_age=Config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            httponly=False,
+            secure=is_production,
+            samesite="lax",
+            path="/"
+        )
+        
+        logger.info(f"✅ GitHub OAuth successful for {SecurityUtils.mask_email(email)}")
         return response
         
     except Exception as e:
-        logger.error(f"GitHub callback error: {e}")
+        logger.error(f"❌ GitHub callback error: {str(e)}", exc_info=True)
         return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=server_error")
 
-@router.get("/callback")
-async def auth_callback(code: str):
-    """Handle OAuth callback and exchange code for access token"""
-    try:
-        # Exchange the code for an access token
-        access_token = await GitHubClient.exchange_code_for_token(code)
-        if not access_token:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to exchange code for token"
-            )
-            
-        # Get user info from GitHub
-        user_info = await GitHubClient.get_user_info(access_token)
-        if not user_info or not user_info.get("email"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to get user information"
-            )
-            
-        # Create or update user
-        email = user_info["email"].lower()
-        user = await store.get_user(email)
-        if not user:
-            user = await store.create_user(email, github_id=user_info["github_id"])
-        else:
-            await store.update_user(email, github_id=user_info["github_id"])
-            
-        # Generate JWT tokens
-        access_token = JWTManager.create_access_token({"sub": email, "verified": True})
-        refresh_token = await JWTManager.create_refresh_token(email)
-        
-        return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-            "expires_in": Config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        }
-        
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"Auth callback error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authentication failed"
-        )
-
-@router.post("/auth/refresh", response_model=TokenResponse)
+@router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(request: RefreshTokenRequest):
     """Refresh access token"""
     email = await JWTManager.verify_refresh_token(request.refresh_token)
@@ -1274,23 +1351,40 @@ async def refresh_token(request: RefreshTokenRequest):
         expires_in=Config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
-@router.post("/auth/logout")
+@router.post("/logout")
 async def logout(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     refresh_token: Optional[str] = None
 ):
     """Logout user and revoke tokens"""
+    # Create response that will clear cookies
+    response = JSONResponse(content={"message": "Logged out successfully"})
+    
+    # Clear ALL authentication cookies
+    cookie_names = ["access_token", "refresh_token", "github_access_token", "user_email"]
+    for cookie_name in cookie_names:
+        response.delete_cookie(
+            key=cookie_name,
+            path="/",
+            domain=None,
+            secure=False,  # Set to True in production with HTTPS
+            httponly=True,
+            samesite="lax"
+        )
+    
+    # Blacklist the access token if provided
     if credentials:
-        # Blacklist access token
         await store.blacklist_token(credentials.credentials)
     
+    # Revoke refresh token if provided
     if refresh_token:
-        # Revoke refresh token
         await JWTManager.revoke_refresh_token(refresh_token)
     
-    return {"message": "Logged out successfully"}
+    logger.info("User logged out, cookies cleared")
+    return response
 
-@router.get("/auth/me", response_model=UserInfo)
+@router.get("/me", response_model=UserInfo)
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     """Get current user information"""
     user = await store.get_user(current_user["sub"])
@@ -1307,52 +1401,71 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         last_login=user.last_login
     )
 
-
 @router.get("/session")
 async def get_session_info(request: Request):
-    """Return the current authenticated user by reading access_token from an HttpOnly cookie
-    or falling back to Authorization header. Returns 401 if not authenticated.
-    """
-    # Prefer HttpOnly cookie set by the OAuth callback
-    access_token = request.cookies.get("access_token")
-
-    # Fallback to Authorization header (Bearer token)
-    if not access_token:
-        auth = request.headers.get("Authorization")
-        if auth and auth.lower().startswith("bearer "):
-            access_token = auth.split(" ", 1)[1]
-
-    if not access_token:
+    """Get current session information from cookies or Authorization header"""
+    try:
+        # Try to get access token from cookie first
+        access_token = request.cookies.get("access_token")
+        
+        # Fallback to Authorization header
+        if not access_token:
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header.lower().startswith("bearer "):
+                access_token = auth_header.split(" ", 1)[1]
+        
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="No authentication token found"
+            )
+        
+        # Verify token
+        payload = await JWTManager.verify_token(access_token)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+        
+        # Get user
+        email = payload.get("sub")
+        user = await store.get_user(email)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Get GitHub token if available
+        github_token = request.cookies.get("github_access_token")
+        
+        return {
+            "authenticated": True,
+            "user": {
+                "email": user.email,
+                "email_verified": user.email_verified,
+                "created_at": user.created_at.isoformat(),
+                "last_login": user.last_login.isoformat() if user.last_login else None,
+                "github_id": user.github_id
+            },
+            "tokens": {
+                "has_github_token": github_token is not None
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Session info error: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve session information"
         )
 
-    payload = await JWTManager.verify_token(access_token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
-
-    user = await store.get_user(payload.get("sub"))
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-
-    return UserInfo(
-        email=user.email,
-        email_verified=user.email_verified,
-        created_at=user.created_at,
-        last_login=user.last_login
-    )
-
-@router.get("/auth/status", response_model=AuthStatusResponse)
+@router.get("/status", response_model=AuthStatusResponse)
 async def check_auth_status(identifier: str):
     """Check authentication status by email or session token"""
-
     # First try: if it's a valid email, handle as email
     if SecurityUtils.validate_email(identifier):
         email = SecurityUtils.sanitize_input(identifier.lower().strip())
@@ -1393,38 +1506,98 @@ async def check_auth_status(identifier: str):
         attempts_remaining=max(0, Config.MAX_LOGIN_ATTEMPTS - user.login_attempts)
     )
 
+# ----------------- Background Tasks -----------------
+async def cleanup_task():
+    """Periodic cleanup of expired data"""
+    while True:
+        try:
+            await store._cleanup_expired_data()
+            await asyncio.sleep(3600)  # Run every hour
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Cleanup task error: {e}")
+            await asyncio.sleep(300)  # Wait 5 minutes on error
 
-# Error handlers
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    """Handle HTTP exceptions with detailed logging"""
-    logger.warning(f"HTTP {exc.status_code}: {exc.detail} - {request.url}")
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail, "timestamp": datetime.utcnow().isoformat()}
-    )
+# ----------------- Lifespan (for standalone mode only) -----------------
+@asynccontextmanager
+async def lifespan(app):
+    """Application lifespan management"""
+    # Startup
+    logger.info("Starting SecureScan Auth API...")
+    
+    # Initialize database
+    await initialize_database()
+    
+    # Initial cleanup of expired data
+    await store._cleanup_expired_data()
+    
+    # Start background cleanup task
+    cleanup_task_handle = asyncio.create_task(cleanup_task())
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down SecureScan Auth API...")
+    cleanup_task_handle.cancel()
+    try:
+        await cleanup_task_handle
+    except asyncio.CancelledError:
+        pass
 
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """Handle general exceptions"""
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "Internal server error",
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    )
+# ----------------- Export router and store -----------------
+__all__ = ['router', 'store', 'lifespan']
 
-# Include the router in the app
-app.include_router(router)
+async def initialize_database():
+    """Initialize database tables on startup"""
+    try:
+        from database.models import Base
+        from database.config import engine, test_connection
+        
+        # Test connection
+        logger.info("Testing database connection...")
+        is_connected = await test_connection()
+        
+        if is_connected:
+            # Create all tables
+            logger.info("Creating database tables...")
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("✅ Database initialized successfully")
+        else:
+            logger.warning("⚠️  Database connection failed - running in memory-only mode")
+            store.db_sync_enabled = False
+    except Exception as e:
+        logger.error(f"❌ Database initialization error: {e}")
+        logger.warning("⚠️  Running in memory-only mode")
+        store.db_sync_enabled = False
 
+
+# ----------------- Standalone Mode (for testing) -----------------
 if __name__ == "__main__":
     import uvicorn
+    from fastapi import FastAPI
+    
+    # Create standalone app only when running directly
+    standalone_app = FastAPI(
+        title="SecureScan Auth API (Standalone)",
+        description="Secure authentication service - Standalone Mode",
+        version="2.0.0",
+        lifespan=lifespan,
+        docs_url="/docs",
+        redoc_url="/redoc"
+    )
+    
+    # Include router in standalone app
+    standalone_app.include_router(router)
+    
+    logger.info("Running in STANDALONE mode - for testing only")
+    logger.info("In production, import router into main.py")
+    
     uvicorn.run(
-        "main:app",
+        standalone_app,
         host="0.0.0.0",
         port=8000,
-        reload=Config.DEBUG,
-        log_level="info" if not Config.DEBUG else "debug"
+        reload=True,
+        log_level="info"
     )

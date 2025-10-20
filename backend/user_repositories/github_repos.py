@@ -1,10 +1,12 @@
 """
 GitHub Repository Management Backend
 Handles fetching repositories, files, and repository contents with proper authentication
+Updated to work with PostgreSQL database instead of in-memory store
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 from typing import List, Dict, Any, Optional
 import logging
@@ -12,11 +14,12 @@ from datetime import datetime, timedelta
 import asyncio
 from functools import lru_cache
 
-# Import from authentication module
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from backend.auth.authentication import get_current_user, store, Config, JWTManager
+# Database imports
+from backend.database.config import get_db
+from backend.database.service import DatabaseService
+
+# Import from authentication module (removed 'store')
+from backend.auth.authentication import get_current_user, Config, JWTManager
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +43,13 @@ class GitHubAPIError(Exception):
         super().__init__(self.message)
 
 
-async def get_github_token(request: Request) -> Optional[str]:
+async def get_github_token(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+) -> Optional[str]:
     """
     Extract GitHub access token from various sources
+    Updated to use database instead of store
     """
     # Try cookie first
     github_token = request.cookies.get("github_access_token")
@@ -55,7 +62,7 @@ async def get_github_token(request: Request) -> Optional[str]:
     if auth_header and auth_header.startswith("Bearer "):
         try:
             token = auth_header.split(" ")[1]
-            payload = await JWTManager.verify_token(token)
+            payload = await JWTManager.verify_token(db, token)
             if payload and "github_token" in payload:
                 logger.info("Found GitHub token in JWT")
                 return payload["github_token"]
@@ -66,7 +73,7 @@ async def get_github_token(request: Request) -> Optional[str]:
     access_token = request.cookies.get("access_token")
     if access_token:
         try:
-            payload = await JWTManager.verify_token(access_token)
+            payload = await JWTManager.verify_token(db, access_token)
             if payload and "github_token" in payload:
                 logger.info("Found GitHub token in access_token cookie")
                 return payload["github_token"]
@@ -90,7 +97,7 @@ async def make_github_request(
     headers = {
         "Authorization": f"Bearer {github_token}",
         "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "SecureScan-App/1.0",
+        "User-Agent": "ReVAMP-SecureScan/2.0",
         "X-GitHub-Api-Version": "2022-11-28"
     }
     
@@ -174,10 +181,13 @@ def set_cached_data(cache_key: str, data: Any, duration: timedelta = CACHE_DURAT
 # ==================== API ENDPOINTS ====================
 
 @router.get("/profile")
-async def get_github_profile(request: Request):
+async def get_github_profile(
+    request: Request,
+    db: AsyncSession = Depends(get_db)  # Added database dependency
+):
     """Get GitHub user profile"""
     try:
-        github_token = await get_github_token(request)
+        github_token = await get_github_token(request, db)  # Pass db
         if not github_token:
             logger.error("No GitHub token found")
             raise HTTPException(
@@ -195,7 +205,11 @@ async def get_github_profile(request: Request):
             "name": profile.get("name"),
             "avatar_url": profile.get("avatar_url"),
             "html_url": profile.get("html_url"),
-            "bio": profile.get("bio")
+            "bio": profile.get("bio"),
+            "email": profile.get("email"),
+            "public_repos": profile.get("public_repos"),
+            "followers": profile.get("followers"),
+            "following": profile.get("following")
         }
 
     except GitHubAPIError as e:
@@ -211,6 +225,7 @@ async def get_github_profile(request: Request):
 @router.get("/repos")
 async def get_user_repositories(
     request: Request,
+    db: AsyncSession = Depends(get_db),  # Added database dependency
     query: str = Query("", description="Search query for repositories"),
     type: str = Query("all", description="Type of repositories (all, owner, member)"),
     sort: str = Query("updated", description="Sort by (updated, full_name, created, pushed)"),
@@ -221,7 +236,7 @@ async def get_user_repositories(
     """
     Get user's GitHub repositories with filtering, sorting, and pagination
     """
-    github_token = await get_github_token(request)
+    github_token = await get_github_token(request, db)  # Pass db
     
     if not github_token:
         logger.error("No GitHub token for repos request")
@@ -294,6 +309,7 @@ async def get_repository_files(
     owner: str,
     repo: str,
     request: Request,
+    db: AsyncSession = Depends(get_db),  # Added database dependency
     branch: Optional[str] = Query(None, description="Branch name (default: default branch)"),
     path: Optional[str] = Query("", description="Path to fetch files from"),
     recursive: bool = Query(True, description="Fetch files recursively")
@@ -302,7 +318,7 @@ async def get_repository_files(
     Get all files from a specific repository
     Returns a tree structure of files with metadata
     """
-    github_token = await get_github_token(request)
+    github_token = await get_github_token(request, db)  # Pass db
     
     if not github_token:
         raise HTTPException(
@@ -381,12 +397,15 @@ async def get_repository_files(
 async def scan_repository(
     owner: str,
     repo: str,
-    request: Request
+    request: Request,
+    db: AsyncSession = Depends(get_db),  # Added database dependency
+    current_user: dict = Depends(get_current_user)  # Added authentication
 ):
     """
     Trigger a security scan on a repository
+    Requires authentication
     """
-    github_token = await get_github_token(request)
+    github_token = await get_github_token(request, db)  # Pass db
     
     if not github_token:
         raise HTTPException(status_code=401, detail="GitHub account not connected")
@@ -395,17 +414,58 @@ async def scan_repository(
         # Verify repository exists and user has access
         repo_info = await make_github_request(f"/repos/{owner}/{repo}", github_token)
         
-        # TODO: Implement actual scanning logic
+        # Log audit event for scan initiation
+        await DatabaseService.log_audit_event(
+            db,
+            action="SCAN_INITIATED",
+            resource=f"repository:{owner}/{repo}",
+            success=True,
+            user_email=current_user.get("sub"),
+            event_metadata={
+                "repository": f"{owner}/{repo}",
+                "repository_id": repo_info.get("id"),
+                "default_branch": repo_info.get("default_branch")
+            }
+        )
+        
+        scan_id = f"scan_{int(datetime.utcnow().timestamp())}"
+        
+        logger.info(f"Scan initiated for {owner}/{repo} by {current_user.get('sub')}")
+        
+        # TODO: Implement actual scanning logic here
+        # This could trigger a background task or queue job
+        
         return {
             "status": "scan_initiated",
             "repository": f"{owner}/{repo}",
             "message": "Security scan has been initiated",
-            "scan_id": f"scan_{datetime.utcnow().timestamp()}"
+            "scan_id": scan_id,
+            "initiated_by": current_user.get("sub"),
+            "initiated_at": datetime.utcnow().isoformat()
         }
         
     except GitHubAPIError as e:
+        # Log failed scan attempt
+        await DatabaseService.log_audit_event(
+            db,
+            action="SCAN_FAILED",
+            resource=f"repository:{owner}/{repo}",
+            success=False,
+            user_email=current_user.get("sub"),
+            error_message=e.message
+        )
         logger.error(f"GitHub API error initiating scan: {e.message}")
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
         logger.error(f"Error initiating scan: {e}")
         raise HTTPException(status_code=500, detail="Failed to initiate scan")
+
+
+@router.get("/health")
+async def github_health_check():
+    """Health check for GitHub integration"""
+    return {
+        "service": "GitHub Integration",
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat()
+    }
