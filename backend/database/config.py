@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 # PostgreSQL connection string
 DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://revamp_user:Change_This_Password_123!@127.0.0.1:5432/revamp_db"
+    "DATABASE_URL"
+    
 )
 
 # Create async engine
