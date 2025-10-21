@@ -1,93 +1,130 @@
 """
-Unified Main Entry Point for SecureScan Application
-Orchestrates authentication, GitHub integration, and repository scanning
+Unified Main Entry Point for REVAMP/SecureScan Application
+Combines authentication database, GitHub integration, and repository scanning
 """
+# CRITICAL: Force UTF-8 encoding for Windows console BEFORE any other imports
+import sys
+import io
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 import uvicorn
 import socket
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-import logging
-import os
 from datetime import datetime
+import os
+import logging
+from sqlalchemy import text
 from dotenv import load_dotenv
 
-# Load environment
+# Load environment variables
 load_dotenv()
 
-# Setup logging
+# Setup logging with both file and console handlers
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('app.log'),
-        logging.StreamHandler()
+        logging.FileHandler('app.log', encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
 
-# Import configuration ONLY - avoid importing models from __init__
+# Import configuration
 try:
     from backend.auth.authentication import Config as AuthConfig
-    logger.info("✓ Authentication config loaded")
+    logger.info("[OK] Authentication config loaded")
 except ImportError as e:
-    logger.error(f"✗ Failed to import auth config: {e}")
+    logger.error(f"[FAIL] Failed to import auth config: {e}")
     AuthConfig = type('Config', (), {'ENVIRONMENT': 'development', 'DEBUG': True})
 
 try:
     from backend.scanning_repos import config as scanning_config
     scanner_logger = scanning_config.logger
-    logger.info("✓ Scanning config loaded")
+    logger.info("[OK] Scanning config loaded")
 except ImportError as e:
-    logger.error(f"✗ Failed to import scanning config: {e}")
+    logger.error(f"[FAIL] Failed to import scanning config: {e}")
     scanner_logger = logger
 
-# Import routers DIRECTLY from modules (not from __init__.py)
+# Import routers
 try:
     from backend.auth.authentication import router as auth_router
-    logger.info("✓ Auth router loaded")
+    logger.info("[OK] Auth router loaded")
 except ImportError as e:
-    logger.error(f"✗ Failed to import auth router: {e}")
+    logger.error(f"[FAIL] Failed to import auth router: {e}")
     raise
 
 try:
     from backend.user_repositories.github_repos import router as github_router
-    logger.info("✓ GitHub router loaded")
+    logger.info("[OK] GitHub router loaded")
 except ImportError as e:
-    logger.error(f"✗ Failed to import github router: {e}")
+    logger.error(f"[FAIL] Failed to import github router: {e}")
     raise
 
 try:
     from backend.scanning_repos.routes import router as scanning_router
-    logger.info("✓ Scanning router loaded")
+    logger.info("[OK] Scanning router loaded")
 except ImportError as e:
-    logger.error(f"✗ Failed to import scanning router: {e}")
+    logger.error(f"[FAIL] Failed to import scanning router: {e}")
     raise
 
 
+# Lifespan event handler for startup/shutdown
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifecycle management"""
+    """Handle startup and shutdown events"""
+    # Startup
     logger.info("=" * 80)
-    logger.info("STARTING SECURESCAN APPLICATION")
+    logger.info(">> Starting REVAMP/SecureScan API...")
     logger.info("=" * 80)
+    
+    # Test database connection
+    try:
+        from backend.database.config import test_connection
+        db_connected = await test_connection()
+        if db_connected:
+            logger.info("[OK] Database connected successfully")
+        else:
+            logger.warning("[WARN] Database connection failed - check your DATABASE_URL in .env")
+    except ImportError:
+        logger.warning("[WARN] Database module not configured")
+    except Exception as e:
+        logger.error(f"[ERROR] Database connection error: {e}")
+    
+    # Run auth store cleanup
+    try:
+        from backend.auth.authentication import store
+        await store._cleanup_expired_data()
+        logger.info("[OK] Auth store initialized")
+    except Exception as e:
+        logger.error(f"[WARN] Auth store initialization error: {e}")
+    
+    logger.info("[OK] All services initialized")
+    
     yield
+    
+    # Shutdown
     logger.info("=" * 80)
-    logger.info("SHUTTING DOWN SECURESCAN APPLICATION")
+    logger.info(">> Shutting down REVAMP/SecureScan API...")
     logger.info("=" * 80)
 
 
-# Create FastAPI app
+# Create main FastAPI application with lifespan
 app = FastAPI(
-    title="SecureScan API",
-    description="Unified security scanning platform with GitHub integration",
+    title="REVAMP/SecureScan API",
+    description="Unified security scanning platform with authentication database, GitHub integration, and vulnerability analysis",
     version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
 )
 
-# Configure CORS
+# Configure CORS with proper settings for OAuth
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -97,11 +134,13 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
         "http://127.0.0.1:8000",
+        "https://github.com",  # Allow GitHub OAuth redirects
     ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
-    expose_headers=["*"]
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # Include routers with proper prefixes
@@ -109,34 +148,67 @@ logger.info("Registering routers...")
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(github_router, prefix="/api/github", tags=["GitHub"])
 app.include_router(scanning_router, prefix="/api/scanning", tags=["Scanning"])
-logger.info("✓ All routers registered")
+logger.info("[OK] All routers registered")
 
 
-@app.get("/")
+@app.get("/", tags=["Root"])
 async def root():
     """Root endpoint - API health check"""
     return {
-        "message": "SecureScan API is running",
+        "message": "REVAMP/SecureScan API is running",
         "version": "3.0.0",
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
+        "docs": "http://localhost:8000/docs",
         "features": [
             "GitHub OAuth Authentication",
+            "Authentication Database (PostgreSQL/SQLite)",
             "Repository Management",
             "Security Scanning (Semgrep + CodeQL)",
             "Vulnerability Analysis",
             "Real-time Scan Status"
-        ]
+        ],
+        "endpoints": {
+            "auth": "/auth",
+            "github": "/api/github",
+            "scanning": "/api/scanning",
+            "health": "/health",
+            "status": "/api/status"
+        }
     }
 
 
-@app.get("/health")
+@app.get("/health", tags=["Health"])
 async def health_check():
-    """Detailed health check"""
+    """Detailed health check with database status"""
+    db_status = "not_configured"
+    
+    try:
+        from backend.database.config import engine
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT 1"))
+        db_status = "connected"
+    except ImportError:
+        db_status = "not_configured"
+    except Exception as e:
+        logger.error(f"Health check database error: {e}")
+        db_status = "disconnected"
+    
+    # Check auth store
+    auth_status = "unknown"
+    try:
+        from backend.auth.authentication import store
+        auth_status = f"healthy - {len(store.users)} users"
+    except Exception as e:
+        auth_status = f"error: {str(e)}"
+    
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "database": db_status,
+        "auth_store": auth_status,
         "environment": getattr(AuthConfig, 'ENVIRONMENT', 'unknown'),
+        "version": "3.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
         "services": {
             "auth": "operational",
             "github": "operational",
@@ -145,9 +217,9 @@ async def health_check():
     }
 
 
-@app.get("/api/status")
+@app.get("/api/status", tags=["Status"])
 async def api_status():
-    """Get API operational status"""
+    """Get API operational status with scanning statistics"""
     try:
         from backend.scanning_repos.background_tasks import get_active_scans, get_all_scan_results
         
@@ -155,6 +227,7 @@ async def api_status():
         
         return {
             "timestamp": datetime.utcnow().isoformat(),
+            "version": "3.0.0",
             "scanning": {
                 "active_scans": get_active_scans(),
                 "total_scans": len(all_scans),
@@ -173,6 +246,26 @@ async def api_status():
         }
 
 
+# Error handler with better logging for OAuth issues
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Handle unexpected errors"""
+    logger.error(f"Unhandled exception on {request.url}: {exc}", exc_info=True)
+    
+    # Log request details for debugging OAuth issues
+    if "/auth/" in str(request.url):
+        logger.error(f"Auth request details - Method: {request.method}, Headers: {request.headers}")
+    
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": str(exc) if getattr(AuthConfig, 'DEBUG', False) else "Internal server error",
+            "timestamp": datetime.utcnow().isoformat(),
+            "path": str(request.url)
+        }
+    )
+
+
 def print_banner():
     """Print startup banner"""
     try:
@@ -185,28 +278,31 @@ def print_banner():
     debug = getattr(AuthConfig, 'DEBUG', False)
 
     print("\n" + "=" * 90)
-    print("SECURESCAN UNIFIED APPLICATION - v3.0")
+    print("REVAMP/SECURESCAN UNIFIED APPLICATION - v3.0")
     print("=" * 90)
     
     print(f"\nCOMPONENTS LOADED:")
-    print(f"   ✓ Authentication Module (backend/auth/)")
-    print(f"   ✓ GitHub Integration Module (backend/user_repositories/)")
-    print(f"   ✓ Security Scanning Module (backend/scanning_repos/)")
+    print(f"   [OK] Authentication Module with Database (backend/auth/)")
+    print(f"   [OK] GitHub Integration Module (backend/user_repositories/)")
+    print(f"   [OK] Security Scanning Module (backend/scanning_repos/)")
     
     print(f"\nCONFIGURATION:")
     print(f"   Environment: {env}")
     print(f"   Debug Mode: {debug}")
-    print(f"   GitHub OAuth: {'✓ Configured' if os.getenv('GITHUB_CLIENT_ID') else '✗ Not Configured'}")
-    print(f"   Semgrep Token: {'✓ Configured' if os.getenv('SEMGREP_APP_TOKEN') else '✗ Not Configured'}")
+    print(f"   Database: {'[OK] Configured' if os.getenv('DATABASE_URL') else '[X] Not Configured'}")
+    print(f"   GitHub OAuth: {'[OK] Configured' if os.getenv('GITHUB_CLIENT_ID') else '[X] Not Configured'}")
+    print(f"   GitHub Callback: {os.getenv('GITHUB_CALLBACK_URL', 'http://localhost:8000/auth/github/callback')}")
+    print(f"   Semgrep Token: {'[OK] Configured' if os.getenv('SEMGREP_APP_TOKEN') else '[X] Not Configured'}")
     print(f"   Max Concurrent Scans: {os.getenv('MAX_CONCURRENT_SCANS', '5')}")
     
     print(f"\nAPI ENDPOINTS:")
     print(f"   Root: http://localhost:8000/")
     print(f"   Docs: http://localhost:8000/docs")
     print(f"   ReDoc: http://localhost:8000/redoc")
+    print(f"   Health: http://localhost:8000/health")
     print(f"   Status: http://localhost:8000/api/status")
     
-    print(f"\nAUTHENTICATION:")
+    print(f"\nAUTHENTICATION (with Database):")
     print(f"   POST   /auth/auth/initiate")
     print(f"   POST   /auth/auth/verify")
     print(f"   GET    /auth/github/login")
@@ -229,6 +325,9 @@ def print_banner():
     print(f"   Local: http://localhost:8000")
     print(f"   LAN:   http://{local_ip}:8000")
     
+    print("\n" + "=" * 90)
+    print("IMPORTANT: Make sure your GitHub OAuth App callback URL is set to:")
+    print(f"   {os.getenv('GITHUB_CALLBACK_URL', 'http://localhost:8000/auth/github/callback')}")
     print("=" * 90 + "\n")
 
 

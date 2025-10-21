@@ -57,10 +57,11 @@ export class AuthService {
 
   // Secure logout: call backend to revoke tokens then clear local storage and redirect
   static async logout(): Promise<void> {
-    try {
-      const accessToken = localStorage.getItem('access_token');
-      const refreshToken = localStorage.getItem('refresh_token');
+    const accessToken = localStorage.getItem('access_token');
+    const refreshToken = localStorage.getItem('refresh_token');
 
+    try {
+      // Call backend to revoke tokens
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (accessToken) {
         headers['Authorization'] = `Bearer ${accessToken}`;
@@ -70,17 +71,34 @@ export class AuthService {
         method: 'POST',
         headers,
         body: JSON.stringify({ refresh_token: refreshToken || null }),
-      }).catch(() => {
-        // ignore network errors, still clear local state
+        credentials: 'include', // Include cookies if using session-based auth
+      }).catch((err) => {
+        // Log error but continue with local cleanup
+        console.warn('Logout API call failed:', err);
       });
     } finally {
-      // clear local state
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('auth_user');
-      localStorage.removeItem('auth_session');
-      // redirect to root
-      window.location.href = '/';
+      // Always clear local state regardless of API call success
+      localStorage.clear(); // Clear all localStorage
+      sessionStorage.clear(); // Clear sessionStorage too
+      
+      // Get all cookies and clear them
+      const cookies = document.cookie.split(';');
+      for (const cookie of cookies) {
+        const [name] = cookie.trim().split('=');
+        // Clear cookie for current path
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        // Clear cookie for root domain
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname}`;
+        // Clear cookie for parent domain
+        const domain = window.location.hostname.split('.').slice(-2).join('.');
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${domain}`;
+      }
+      
+      // Small delay to ensure storage is cleared before redirect
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Force reload to clear any in-memory state
+      window.location.replace('/');
     }
   }
 }
