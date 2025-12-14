@@ -1,6 +1,5 @@
 """
-Background scanning task implementation with thread safety
-Integrates with GitHub authentication
+Production background scanning with multi-scanner engine
 """
 import os
 import shutil
@@ -8,10 +7,9 @@ import tempfile
 import threading
 from datetime import datetime
 from typing import Optional, Dict, Any
-from .config import logger
-from .utils import detect_languages, calculate_severity_summary, clone_github_repo
-from .scanner_semgrep import run_semgrep_scan
-from .scanner_codeql import run_codeql_scan, determine_scanner
+from .config import logger, MAX_REPO_SIZE_MB
+from .utils import detect_languages, calculate_severity_summary, clone_github_repo, get_dir_size
+from .scanner_core import VulnerabilityScanner
 
 # Thread-safe global state
 _lock = threading.Lock()
@@ -29,7 +27,9 @@ async def perform_scan(
     scanner_choice: str,
     max_files: int
 ):
-    """Background scan task with GitHub integration"""
+    """
+    Production scan with multi-scanner engine
+    """
     global _active_scans
     temp_dir = None
     start_time = datetime.now()
@@ -38,10 +38,10 @@ async def perform_scan(
         with _lock:
             _active_scans += 1
             if scan_id not in _scan_results:
-                logger.error(f"[{scan_id}] Scan not found in results!")
+                logger.error(f"[{scan_id}] Scan not found!")
                 return
 
-        logger.info(f"[{scan_id}] Starting scan for {repo_owner}/{repo_name}")
+        logger.info(f"[{scan_id}] 🚀 Starting production scan for {repo_owner}/{repo_name}")
 
         with _lock:
             _scan_results[scan_id].update({
@@ -51,9 +51,9 @@ async def perform_scan(
 
         # Create temp directory
         temp_dir = tempfile.mkdtemp(prefix="scanner_")
-        logger.info(f"[{scan_id}] Temp directory: {temp_dir}")
+        logger.info(f"[{scan_id}] 📁 Temp: {temp_dir}")
 
-        # Clone repository using GitHub token
+        # Clone repository
         success, message = await clone_github_repo(
             github_token,
             repo_owner,
@@ -69,54 +69,35 @@ async def perform_scan(
                     'error_message': message,
                     'completed_at': datetime.now().isoformat()
                 })
-            logger.error(f"[{scan_id}] Clone failed: {message}")
+            logger.error(f"[{scan_id}] ❌ Clone failed: {message}")
+            return
+
+        # Check size
+        repo_size_mb = get_dir_size(temp_dir) / (1024 * 1024)
+        if repo_size_mb > MAX_REPO_SIZE_MB:
+            error_msg = f"Repository too large: {repo_size_mb:.1f} MB (max: {MAX_REPO_SIZE_MB} MB)"
+            with _lock:
+                _scan_results[scan_id].update({
+                    'status': 'failed',
+                    'error_message': error_msg,
+                    'completed_at': datetime.now().isoformat()
+                })
+            logger.error(f"[{scan_id}] ❌ {error_msg}")
             return
 
         with _lock:
             _scan_results[scan_id]['status'] = 'analyzing'
 
         # Detect languages
-        languages = detect_languages(temp_dir, max_files)
-        logger.info(f"[{scan_id}] Detected languages: {languages}")
-
-        # Determine scanners
-        use_codeql, use_semgrep = determine_scanner(languages, scanner_choice)
-        logger.info(f"[{scan_id}] Scanners - CodeQL: {use_codeql}, Semgrep: {use_semgrep}")
+        languages = detect_languages(temp_dir, max_files=2000)
+        logger.info(f"[{scan_id}] 🔍 Languages: {languages}")
 
         with _lock:
             _scan_results[scan_id]['status'] = 'scanning'
 
-        vulnerabilities = []
-        scanner_used = []
-        errors = []
-
-        # Run Semgrep
-        if use_semgrep:
-            logger.info(f"[{scan_id}] Running Semgrep...")
-            with _lock:
-                _scan_results[scan_id]['status'] = 'scanning_semgrep'
-
-            semgrep_vulns, semgrep_error = run_semgrep_scan(temp_dir, semgrep_token)
-            if semgrep_vulns:
-                vulnerabilities.extend(semgrep_vulns)
-                scanner_used.append('Semgrep')
-                logger.info(f"[{scan_id}] Semgrep found {len(semgrep_vulns)} issues")
-            if semgrep_error:
-                errors.append(f"Semgrep: {semgrep_error}")
-
-        # Run CodeQL
-        if use_codeql:
-            logger.info(f"[{scan_id}] Running CodeQL...")
-            with _lock:
-                _scan_results[scan_id]['status'] = 'scanning_codeql'
-
-            codeql_vulns, codeql_error = run_codeql_scan(temp_dir, languages)
-            if codeql_vulns:
-                vulnerabilities.extend(codeql_vulns)
-                scanner_used.append('CodeQL')
-                logger.info(f"[{scan_id}] CodeQL found {len(codeql_vulns)} issues")
-            if codeql_error:
-                errors.append(f"CodeQL: {codeql_error}")
+        # Use multi-scanner engine
+        scanner = VulnerabilityScanner(temp_dir, languages)
+        vulnerabilities, error_msg = scanner.scan(use_cache=False)
 
         # Calculate results
         severity_summary = calculate_severity_summary(vulnerabilities)
@@ -137,20 +118,22 @@ async def perform_scan(
             _scan_results[scan_id].update({
                 'status': 'completed',
                 'vulnerabilities': vulnerabilities,
-                'scanner_used': ' + '.join(scanner_used) if scanner_used else 'None',
+                'scanner_used': 'Multi-Scanner Engine',
                 'total_issues': len(vulnerabilities),
                 'severity_summary': severity_dict,
                 'detected_languages': list(languages),
-                'error_message': '; '.join(errors) if errors else None,
+                'error_message': error_msg if error_msg else None,
                 'scan_duration': round(duration, 2),
-                'completed_at': end_time.isoformat()
+                'completed_at': end_time.isoformat(),
+                'repo_size_mb': round(repo_size_mb, 2)
             })
 
-        logger.info(f"[{scan_id}] Scan completed in {duration:.2f}s with {len(vulnerabilities)} issues")
+        logger.info(f"[{scan_id}] ✅ Complete in {duration:.2f}s: {len(vulnerabilities)} issues")
+        logger.info(f"[{scan_id}] 📊 Severity: {severity_dict}")
 
     except Exception as e:
         error_msg = f"Scan failed: {str(e)}"
-        logger.error(f"[{scan_id}] {error_msg}", exc_info=True)
+        logger.error(f"[{scan_id}] ❌ {error_msg}", exc_info=True)
         with _lock:
             if scan_id in _scan_results:
                 _scan_results[scan_id].update({
@@ -165,13 +148,13 @@ async def perform_scan(
         if temp_dir and os.path.exists(temp_dir):
             try:
                 shutil.rmtree(temp_dir)
-                logger.info(f"[{scan_id}] Cleaned up temp directory")
+                logger.info(f"[{scan_id}] 🧹 Cleaned up")
             except Exception as e:
-                logger.error(f"[{scan_id}] Cleanup error: {str(e)}")
+                logger.error(f"[{scan_id}] ⚠️ Cleanup error: {e}")
 
 
 def initialize_scan(scan_id: str, repo_owner: str, repo_name: str) -> None:
-    """Initialize a scan in the global results dictionary"""
+    """Initialize scan"""
     with _lock:
         _scan_results[scan_id] = {
             'scan_id': scan_id,
@@ -186,38 +169,38 @@ def initialize_scan(scan_id: str, repo_owner: str, repo_name: str) -> None:
             'detected_languages': [],
             'error_message': None,
             'scan_duration': None,
+            'repo_size_mb': None,
             'started_at': None,
             'completed_at': None
         }
 
 
 def get_scan_result(scan_id: str) -> Optional[Dict[str, Any]]:
-    """Thread-safe getter for a specific scan result"""
+    """Get scan result"""
     with _lock:
         return _scan_results.get(scan_id)
 
 
 def get_all_scan_results() -> Dict[str, Dict[str, Any]]:
-    """Thread-safe getter for all scan results"""
+    """Get all results"""
     with _lock:
         return dict(_scan_results)
 
 
 def get_user_scans(email: str) -> Dict[str, Dict[str, Any]]:
-    """Get all scans for a specific user (by email)"""
+    """Get user scans"""
     with _lock:
-        # This would be enhanced with user tracking in production
         return dict(_scan_results)
 
 
 def get_active_scans() -> int:
-    """Thread-safe getter for active scans count"""
+    """Get active count"""
     with _lock:
         return _active_scans
 
 
 def delete_scan(scan_id: str) -> bool:
-    """Thread-safe deletion of scan result"""
+    """Delete scan"""
     with _lock:
         if scan_id in _scan_results:
             del _scan_results[scan_id]

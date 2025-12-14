@@ -1,589 +1,284 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "wouter";
 
 const API_BASE_URL = "http://localhost:8000";
 
-// Types
-interface Toast {
-  id: number;
-  message: string;
-  type?: "success" | "error" | "info";
-}
+// --- ICONS (Inline SVGs for Professional Look) ---
+const Icons = {
+  Github: () => (
+    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+  ),
+  Star: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+  ),
+  Fork: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" /></svg>
+  ),
+  Shield: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+  ),
+  Search: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+  ),
+  Close: () => (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+  ),
+  ChevronRight: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+  ),
+  File: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+  )
+};
 
-interface Profile {
-  login: string;
-  name?: string;
-  avatar_url?: string;
-  bio?: string;
-}
-
-interface Owner {
-  login?: string;
-  avatar_url?: string;
-  html_url?: string;
-}
-
+// --- TYPES ---
+interface Toast { id: number; message: string; type?: "success" | "error" | "info"; }
+interface Profile { login: string; name?: string; avatar_url?: string; bio?: string; }
+interface Owner { login?: string; avatar_url?: string; html_url?: string; }
 interface Repo {
-  id: number;
-  name: string;
-  full_name?: string;
-  html_url?: string;
-  private: boolean;
-  visibility?: string;
-  description?: string;
-  updated_at?: string;
-  stargazers_count?: number;
-  forks_count?: number;
-  language?: string;
-  owner?: Owner;
-  size?: number;
+  id: number; name: string; full_name?: string; html_url?: string;
+  private: boolean; visibility?: string; description?: string;
+  updated_at?: string; stargazers_count?: number; forks_count?: number;
+  language?: string; owner?: Owner; size?: number;
 }
-
-interface SeveritySummary {
-  critical: number;
-  high: number;
-  medium: number;
-  low: number;
-  info: number;
-  warning: number;
-}
-
+interface SeveritySummary { critical: number; high: number; medium: number; low: number; info: number; warning: number; }
 interface Vulnerability {
-  scanner: string;
-  rule_id: string;
-  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO" | "WARNING";
-  message: string;
-  vulnerability_type: string;
-  location: {
-    file: string;
-    start_line: number;
-    end_line: number;
-  };
-  code_snippet?: string;
-  cwe?: string[];
-  owasp?: string[];
+  scanner: string; rule_id: string; severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO" | "WARNING";
+  message: string; vulnerability_type: string;
+  location: { file: string; start_line: number; end_line: number; };
+  code_snippet?: string; cwe?: string[]; owasp?: string[];
 }
-
 interface ScanResult {
-  scan_id: string;
-  repo_owner: string;
-  repo_name: string;
-  status: string;
-  total_issues: number;
-  severity_summary: SeveritySummary;
-  vulnerabilities: Vulnerability[];
-  scan_duration?: number;
-  completed_at?: string;
-  scanner_used?: string;
-  detected_languages?: string[];
+  scan_id: string; repo_owner: string; repo_name: string; status: string;
+  total_issues: number; severity_summary: SeveritySummary; vulnerabilities: Vulnerability[];
+  scan_duration?: number; completed_at?: string; scanner_used?: string; detected_languages?: string[];
 }
-
 interface ScanStatus {
-  scan_id: string;
-  status: string;
-  message: string;
-  progress: string;
-  repo_name?: string;
+  scan_id: string; status: string; message: string; progress: string; repo_name?: string;
 }
 
-// Toast Component
-function Toasts({ 
-  toasts, 
-  removeToast 
-}: { 
-  toasts: Toast[]; 
-  removeToast: (id: number) => void 
-}) {
+// --- UTILS ---
+function timeAgo(iso?: string) {
+  if (!iso) return "";
+  const dt = new Date(iso);
+  const diff = (Date.now() - dt.getTime()) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round((bytes / Math.pow(k, i)) * 10) / 10 + " " + sizes[i];
+}
+
+const SEVERITY_CONFIG = {
+  CRITICAL: { color: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/20", label: "Critical" },
+  HIGH: { color: "text-orange-500", bg: "bg-orange-500/10", border: "border-orange-500/20", label: "High" },
+  MEDIUM: { color: "text-yellow-500", bg: "bg-yellow-500/10", border: "border-yellow-500/20", label: "Medium" },
+  LOW: { color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/20", label: "Low" },
+  WARNING: { color: "text-amber-500", bg: "bg-amber-500/10", border: "border-amber-500/20", label: "Warning" },
+  INFO: { color: "text-slate-400", bg: "bg-slate-500/10", border: "border-slate-500/20", label: "Info" },
+};
+
+function SeverityBadge({ severity }: { severity: string }) {
+  const style = SEVERITY_CONFIG[severity as keyof typeof SEVERITY_CONFIG] || SEVERITY_CONFIG.INFO;
   return (
-    <div className="fixed top-5 right-5 flex flex-col gap-2 z-50 max-w-md">
+    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider border ${style.bg} ${style.color} ${style.border}`}>
+      {style.label}
+    </span>
+  );
+}
+
+// --- COMPONENTS ---
+
+function Toasts({ toasts, removeToast }: { toasts: Toast[]; removeToast: (id: number) => void }) {
+  return (
+    <div className="fixed bottom-5 right-5 flex flex-col gap-3 z-[100] max-w-sm w-full">
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`px-5 py-3 rounded-lg shadow-2xl text-sm cursor-pointer transition-all transform hover:scale-105 border ${
-            t.type === "error" 
-              ? "bg-red-500 text-white border-red-600" 
-              : t.type === "info"
-              ? "bg-blue-500 text-white border-blue-600"
-              : "bg-green-500 text-white border-green-600"
+          className={`px-4 py-3 rounded-md shadow-lg border backdrop-blur-md flex items-center justify-between animate-slide-up ${
+            t.type === "error" ? "bg-red-950/80 border-red-800 text-red-100" :
+            t.type === "info" ? "bg-blue-950/80 border-blue-800 text-blue-100" :
+            "bg-emerald-950/80 border-emerald-800 text-emerald-100"
           }`}
           onClick={() => removeToast(t.id)}
         >
-          <div className="flex items-center gap-2">
-            <span className="text-lg">
-              {t.type === "error" ? "❌" : t.type === "info" ? "ℹ️" : "✅"}
-            </span>
-            <span className="font-medium">{t.message}</span>
-          </div>
+          <span className="text-sm font-medium">{t.message}</span>
         </div>
       ))}
     </div>
   );
 }
 
-// Utility Functions
-function timeAgo(iso?: string) {
-  if (!iso) return "";
-  const dt = new Date(iso);
-  const diff = (Date.now() - dt.getTime()) / 1000;
-  const map: [number, string][] = [
-    [60, "seconds"],
-    [60, "minutes"],
-    [24, "hours"],
-    [30, "days"],
-    [12, "months"],
-  ];
-  let unit = "seconds";
-  let val = diff;
-  for (let i = 0; i < map.length; i++) {
-    const [k, name] = map[i];
-    if (val < k) {
-      unit = name;
-      break;
-    }
-    val = val / k;
-    unit = name;
-  }
-  return `${Math.floor(val)} ${unit} ago`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 Bytes";
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
-}
-
-// Enhanced Severity Colors
-function getSeverityStyles(severity: string) {
-  switch (severity) {
-    case "CRITICAL":
-      return {
-        bg: "bg-gradient-to-r from-red-600 to-red-700",
-        border: "border-red-500",
-        text: "text-red-100",
-        badge: "bg-red-600 text-white",
-        icon: "🔴",
-        glow: "shadow-red-500/50"
-      };
-    case "HIGH":
-      return {
-        bg: "bg-gradient-to-r from-orange-600 to-orange-700",
-        border: "border-orange-500",
-        text: "text-orange-100",
-        badge: "bg-orange-600 text-white",
-        icon: "🟠",
-        glow: "shadow-orange-500/50"
-      };
-    case "MEDIUM":
-      return {
-        bg: "bg-gradient-to-r from-yellow-600 to-yellow-700",
-        border: "border-yellow-500",
-        text: "text-yellow-100",
-        badge: "bg-yellow-600 text-white",
-        icon: "🟡",
-        glow: "shadow-yellow-500/50"
-      };
-    case "LOW":
-      return {
-        bg: "bg-gradient-to-r from-blue-600 to-blue-700",
-        border: "border-blue-500",
-        text: "text-blue-100",
-        badge: "bg-blue-600 text-white",
-        icon: "🔵",
-        glow: "shadow-blue-500/50"
-      };
-    case "INFO":
-      return {
-        bg: "bg-gradient-to-r from-gray-600 to-gray-700",
-        border: "border-gray-500",
-        text: "text-gray-100",
-        badge: "bg-gray-600 text-white",
-        icon: "⚪",
-        glow: "shadow-gray-500/50"
-      };
-    case "WARNING":
-      return {
-        bg: "bg-gradient-to-r from-amber-600 to-amber-700",
-        border: "border-amber-500",
-        text: "text-amber-100",
-        badge: "bg-amber-600 text-white",
-        icon: "🟠",
-        glow: "shadow-amber-500/50"
-      };
-    default:
-      return {
-        bg: "bg-gradient-to-r from-gray-600 to-gray-700",
-        border: "border-gray-500",
-        text: "text-gray-100",
-        badge: "bg-gray-600 text-white",
-        icon: "⚪",
-        glow: "shadow-gray-500/50"
-      };
-  }
-}
-
-// Enhanced Scan Results Modal
-function ScanResultsModal({
-  result,
-  onClose,
-}: {
-  result: ScanResult;
-  onClose: () => void;
-}) {
-  const [filteredSeverity, setFilteredSeverity] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
+// --- SCAN RESULTS (Master-Detail View) ---
+function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: () => void }) {
   const [selectedVuln, setSelectedVuln] = useState<Vulnerability | null>(null);
+  const [filterSev, setFilterSev] = useState<string | null>(null);
 
-  const filteredVulns = result.vulnerabilities.filter((v) => {
-    const matchesSeverity = !filteredSeverity || v.severity === filteredSeverity;
-    const matchesSearch = !searchTerm || 
-      v.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.vulnerability_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.location.file.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSeverity && matchesSearch;
-  });
+  // Default to first vuln if exists
+  useEffect(() => {
+    if (result.vulnerabilities.length > 0 && !selectedVuln) {
+      setSelectedVuln(result.vulnerabilities[0]);
+    }
+  }, [result]);
 
-  const severities: Array<"CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO" | "WARNING"> = [
-    "CRITICAL",
-    "HIGH",
-    "MEDIUM",
-    "LOW",
-    "INFO",
-    "WARNING",
-  ];
+  const filteredVulns = useMemo(() => {
+    return result.vulnerabilities.filter(v => !filterSev || v.severity === filterSev);
+  }, [result.vulnerabilities, filterSev]);
+
+  const severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "WARNING", "INFO"];
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl max-w-7xl w-full my-8 border-2 border-slate-700 shadow-2xl">
-        {/* Enhanced Header */}
-        <div className="bg-gradient-to-r from-slate-800 to-slate-900 border-b-2 border-slate-700 p-6 rounded-t-2xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center text-2xl shadow-lg">
-                🛡️
-              </div>
-              <div>
-                <h2 className="text-3xl font-bold text-white">
-                  {result.repo_name}
-                </h2>
-                <div className="flex items-center gap-3 mt-2">
-                  <span className="text-sm text-slate-300">
-                    {result.status === "completed"
-                      ? `✅ Completed in ${result.scan_duration?.toFixed(2)}s`
-                      : result.status}
-                  </span>
-                  {result.scanner_used && (
-                    <span className="px-3 py-1 bg-slate-700 rounded-full text-xs font-medium text-slate-200">
-                      {result.scanner_used}
-                    </span>
-                  )}
-                  {result.detected_languages && result.detected_languages.length > 0 && (
-                    <span className="px-3 py-1 bg-slate-700 rounded-full text-xs font-medium text-slate-200">
-                      {result.detected_languages.join(", ")}
-                    </span>
-                  )}
-                </div>
-              </div>
+    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950 text-zinc-100">
+      {/* Header */}
+      <div className="h-16 border-b border-zinc-800 flex items-center justify-between px-6 bg-zinc-900/50 backdrop-blur-sm">
+        <div className="flex items-center gap-4">
+          <div className="bg-zinc-800 p-2 rounded-lg">
+            <Icons.Shield />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold leading-none">{result.repo_name}</h2>
+            <div className="flex items-center gap-2 text-xs text-zinc-400 mt-1">
+              <span>{result.total_issues} issues detected</span>
+              <span>•</span>
+              <span>{result.scan_duration?.toFixed(2)}s scan time</span>
             </div>
-            <button
-              onClick={onClose}
-              className="text-slate-400 hover:text-white text-3xl transition-colors hover:rotate-90 transform duration-300"
-            >
-              ✕
-            </button>
           </div>
         </div>
+        <button onClick={onClose} className="p-2 hover:bg-zinc-800 rounded-full transition-colors text-zinc-400 hover:text-white">
+          <Icons.Close />
+        </button>
+      </div>
 
-        {/* Summary Cards */}
-        <div className="p-6 border-b border-slate-700">
-          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <span>📊</span> Security Overview
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {severities.map((sev) => {
-              const count =
-                result.severity_summary[
-                  sev.toLowerCase() as keyof SeveritySummary
-                ] || 0;
-              const styles = getSeverityStyles(sev);
-              return (
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden">
+        
+        {/* Sidebar (List) */}
+        <div className="w-full md:w-[400px] border-r border-zinc-800 flex flex-col bg-zinc-900/20">
+          {/* Filters */}
+          <div className="p-4 border-b border-zinc-800 overflow-x-auto">
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setFilterSev(null)}
+                className={`px-3 py-1 rounded text-xs font-medium whitespace-nowrap transition-colors border ${
+                  !filterSev ? "bg-zinc-100 text-zinc-900 border-zinc-100" : "bg-transparent text-zinc-400 border-zinc-700 hover:border-zinc-500"
+                }`}
+              >
+                All
+              </button>
+              {severities.map(sev => {
+                const count = result.severity_summary[sev.toLowerCase() as keyof SeveritySummary] || 0;
+                if (count === 0) return null;
+                const style = SEVERITY_CONFIG[sev as keyof typeof SEVERITY_CONFIG];
+                const active = filterSev === sev;
+                return (
+                  <button
+                    key={sev}
+                    onClick={() => setFilterSev(active ? null : sev)}
+                    className={`px-3 py-1 rounded text-xs font-medium whitespace-nowrap transition-colors border flex items-center gap-2 ${
+                      active ? `${style.bg} ${style.color} ${style.border} ring-1 ring-inset` : "bg-transparent text-zinc-400 border-zinc-800 hover:bg-zinc-800"
+                    }`}
+                  >
+                    {sev.charAt(0) + sev.slice(1).toLowerCase()} 
+                    <span className="opacity-60">{count}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* List */}
+          <div className="flex-1 overflow-y-auto">
+            {filteredVulns.length === 0 ? (
+              <div className="p-8 text-center text-zinc-500 text-sm">No issues found matching filters.</div>
+            ) : (
+              filteredVulns.map((vuln, idx) => (
                 <div
-                  key={sev}
-                  className={`${styles.bg} ${styles.border} rounded-xl p-4 cursor-pointer transition-all transform hover:scale-105 border-2 shadow-lg ${styles.glow} ${
-                    filteredSeverity === sev
-                      ? "ring-4 ring-white scale-105"
-                      : "hover:ring-2 hover:ring-white"
+                  key={idx}
+                  onClick={() => setSelectedVuln(vuln)}
+                  className={`p-4 border-b border-zinc-800/50 cursor-pointer transition-colors hover:bg-zinc-800/50 ${
+                    selectedVuln === vuln ? "bg-zinc-800 border-l-2 border-l-blue-500" : "border-l-2 border-l-transparent"
                   }`}
-                  onClick={() =>
-                    setFilteredSeverity(filteredSeverity === sev ? null : sev)
-                  }
                 >
-                  <div className="text-center">
-                    <div className="text-2xl mb-1">{styles.icon}</div>
-                    <div className="text-xs font-bold uppercase tracking-wide opacity-90">
-                      {sev}
-                    </div>
-                    <div className="text-3xl font-bold mt-2">{count}</div>
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="text-sm font-semibold text-zinc-200 line-clamp-1 pr-2">{vuln.vulnerability_type}</span>
+                    <SeverityBadge severity={vuln.severity} />
+                  </div>
+                  <p className="text-xs text-zinc-500 line-clamp-2 mb-2">{vuln.message}</p>
+                  <div className="flex items-center gap-2 text-[10px] text-zinc-600 font-mono">
+                    <Icons.File />
+                    <span className="truncate">{vuln.location.file}:{vuln.location.start_line}</span>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Search and Filter */}
-        <div className="p-6 border-b border-slate-700 bg-slate-800/50">
-          <div className="flex flex-col md:flex-row gap-3">
-            <input
-              type="text"
-              placeholder="🔍 Search vulnerabilities, files, or types..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="flex-1 bg-slate-900 border-2 border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            {filteredSeverity && (
-              <button
-                onClick={() => setFilteredSeverity(null)}
-                className="px-6 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-white font-medium transition-colors"
-              >
-                Clear Filter
-              </button>
+              ))
             )}
           </div>
         </div>
 
-        {/* Vulnerabilities List */}
-        <div className="p-6 max-h-[60vh] overflow-y-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <span>🔍</span> Issues Found: {filteredVulns.length}
-            </h3>
-            {result.total_issues === 0 && (
-              <div className="px-4 py-2 bg-green-600 rounded-lg text-white font-medium">
-                ✅ No vulnerabilities found!
+        {/* Detail View */}
+        <div className="flex-1 bg-zinc-950 overflow-y-auto relative hidden md:block">
+          {selectedVuln ? (
+            <div className="p-8 max-w-4xl mx-auto">
+              <div className="mb-6 pb-6 border-b border-zinc-800">
+                <div className="flex items-center gap-3 mb-4">
+                  <SeverityBadge severity={selectedVuln.severity} />
+                  <span className="text-xs font-mono text-zinc-500 px-2 py-1 bg-zinc-900 rounded">{selectedVuln.rule_id}</span>
+                </div>
+                <h1 className="text-2xl font-bold text-zinc-100 mb-2">{selectedVuln.vulnerability_type}</h1>
+                <p className="text-zinc-400 leading-relaxed">{selectedVuln.message}</p>
               </div>
-            )}
-          </div>
 
-          {filteredVulns.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">
-                {result.total_issues === 0 ? "🎉" : "🔍"}
+              {/* Location Card */}
+              <div className="bg-zinc-900/30 rounded-lg border border-zinc-800 p-4 mb-6">
+                <h3 className="text-sm font-bold text-zinc-300 mb-3 flex items-center gap-2">
+                  <Icons.File /> Location
+                </h3>
+                <div className="font-mono text-sm text-zinc-400 bg-zinc-950 p-3 rounded border border-zinc-800/50 flex justify-between">
+                  <span>{selectedVuln.location.file}</span>
+                  <span className="text-zinc-500">Lines {selectedVuln.location.start_line} - {selectedVuln.location.end_line}</span>
+                </div>
               </div>
-              <div className="text-xl text-slate-300 font-medium">
-                {result.total_issues === 0
-                  ? "Great job! No security issues found."
-                  : filteredSeverity
-                  ? `No ${filteredSeverity} severity issues found`
-                  : "No matches for your search"}
+
+              {/* Code Snippet */}
+              {selectedVuln.code_snippet && (
+                <div className="mb-6">
+                   <h3 className="text-sm font-bold text-zinc-300 mb-3">Code Evidence</h3>
+                   <div className="relative group">
+                     <pre className="bg-zinc-900 rounded-lg border border-zinc-800 p-4 overflow-x-auto text-sm font-mono text-zinc-300 leading-relaxed">
+                       {selectedVuln.code_snippet}
+                     </pre>
+                   </div>
+                </div>
+              )}
+
+              {/* Metadata */}
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-4 rounded-lg bg-zinc-900/20 border border-zinc-800">
+                   <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Scanner</span>
+                   <p className="text-zinc-200 mt-1 font-mono text-sm">{selectedVuln.scanner}</p>
+                 </div>
+                 {selectedVuln.cwe && selectedVuln.cwe.length > 0 && (
+                   <div className="p-4 rounded-lg bg-zinc-900/20 border border-zinc-800">
+                     <span className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">CWE</span>
+                     <div className="flex gap-2 mt-1">
+                       {selectedVuln.cwe.map(c => (
+                         <span key={c} className="text-blue-400 text-xs font-mono bg-blue-950/30 px-2 py-1 rounded">{c}</span>
+                       ))}
+                     </div>
+                   </div>
+                 )}
               </div>
             </div>
           ) : (
-            <div className="space-y-3">
-              {filteredVulns.map((vuln, idx) => (
-                <VulnerabilityCard
-                  key={idx}
-                  vuln={vuln}
-                  onClick={() => setSelectedVuln(vuln)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Detailed Vulnerability Modal */}
-      {selectedVuln && (
-        <VulnerabilityDetailModal
-          vuln={selectedVuln}
-          onClose={() => setSelectedVuln(null)}
-        />
-      )}
-    </div>
-  );
-}
-
-// Enhanced Vulnerability Card
-function VulnerabilityCard({
-  vuln,
-  onClick,
-}: {
-  vuln: Vulnerability;
-  onClick: () => void;
-}) {
-  const styles = getSeverityStyles(vuln.severity);
-
-  return (
-    <div
-      className={`${styles.bg} ${styles.border} rounded-xl border-2 p-5 cursor-pointer transition-all transform hover:scale-102 hover:shadow-2xl ${styles.glow}`}
-      onClick={onClick}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-2xl">{styles.icon}</span>
-            <h4 className="text-lg font-bold text-white">
-              {vuln.vulnerability_type}
-            </h4>
-            <span className={`${styles.badge} px-3 py-1 rounded-full text-xs font-bold uppercase`}>
-              {vuln.severity}
-            </span>
-          </div>
-          <p className="text-sm text-white opacity-90 mb-3 leading-relaxed">
-            {vuln.message}
-          </p>
-          <div className="flex items-center gap-4 text-xs text-white opacity-75">
-            <span className="flex items-center gap-1">
-              📄 {vuln.location.file}
-            </span>
-            <span className="flex items-center gap-1 font-mono bg-black bg-opacity-30 px-2 py-1 rounded">
-              📍 Line {vuln.location.start_line}
-              {vuln.location.end_line !== vuln.location.start_line &&
-                `-${vuln.location.end_line}`}
-            </span>
-          </div>
-        </div>
-        <div className="flex flex-col items-end gap-2">
-          <span className="text-xs font-bold bg-black bg-opacity-30 px-3 py-1 rounded-full text-white">
-            {vuln.scanner}
-          </span>
-          <button className="text-white opacity-75 hover:opacity-100 transition-opacity text-sm">
-            View Details →
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Vulnerability Detail Modal
-function VulnerabilityDetailModal({
-  vuln,
-  onClose,
-}: {
-  vuln: Vulnerability;
-  onClose: () => void;
-}) {
-  const styles = getSeverityStyles(vuln.severity);
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-      <div className="bg-slate-900 rounded-2xl max-w-4xl w-full border-2 border-slate-700 shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className={`${styles.bg} p-6 rounded-t-2xl border-b-2 ${styles.border}`}>
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-3xl">{styles.icon}</span>
-                <h3 className="text-2xl font-bold text-white">
-                  {vuln.vulnerability_type}
-                </h3>
-              </div>
-              <span className={`${styles.badge} px-4 py-2 rounded-full text-sm font-bold uppercase inline-block`}>
-                {vuln.severity}
-              </span>
-            </div>
-            <button
-              onClick={onClose}
-              className="text-white hover:text-slate-200 text-3xl transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {/* Description */}
-          <div>
-            <h4 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-              📝 Description
-            </h4>
-            <p className="text-slate-300 leading-relaxed bg-slate-800 p-4 rounded-lg">
-              {vuln.message}
-            </p>
-          </div>
-
-          {/* Location */}
-          <div>
-            <h4 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-              📍 Location
-            </h4>
-            <div className="bg-slate-800 p-4 rounded-lg space-y-2">
-              <div className="flex items-center gap-2 text-slate-300">
-                <span className="font-bold">File:</span>
-                <code className="bg-slate-900 px-3 py-1 rounded font-mono text-sm">
-                  {vuln.location.file}
-                </code>
-              </div>
-              <div className="flex items-center gap-2 text-slate-300">
-                <span className="font-bold">Lines:</span>
-                <code className={`${styles.badge} px-3 py-1 rounded font-mono text-sm font-bold`}>
-                  {vuln.location.start_line}
-                  {vuln.location.end_line !== vuln.location.start_line &&
-                    ` - ${vuln.location.end_line}`}
-                </code>
-              </div>
-            </div>
-          </div>
-
-          {/* Technical Details */}
-          <div>
-            <h4 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-              🔬 Technical Details
-            </h4>
-            <div className="bg-slate-800 p-4 rounded-lg space-y-3">
-              <div>
-                <span className="text-slate-400 text-sm">Scanner:</span>
-                <div className="text-white font-medium mt-1">{vuln.scanner}</div>
-              </div>
-              <div>
-                <span className="text-slate-400 text-sm">Rule ID:</span>
-                <code className="block text-white font-mono text-sm mt-1 bg-slate-900 px-3 py-2 rounded">
-                  {vuln.rule_id}
-                </code>
-              </div>
-              {vuln.cwe && vuln.cwe.length > 0 && (
-                <div>
-                  <span className="text-slate-400 text-sm">CWE:</span>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {vuln.cwe.map((cwe, idx) => (
-                      <span
-                        key={idx}
-                        className="bg-blue-600 text-white px-3 py-1 rounded-full text-xs font-medium"
-                      >
-                        {cwe}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {vuln.owasp && vuln.owasp.length > 0 && (
-                <div>
-                  <span className="text-slate-400 text-sm">OWASP:</span>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {vuln.owasp.map((owasp, idx) => (
-                      <span
-                        key={idx}
-                        className="bg-purple-600 text-white px-3 py-1 rounded-full text-xs font-medium"
-                      >
-                        {owasp}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Code Snippet */}
-          {vuln.code_snippet && (
-            <div>
-              <h4 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-                💻 Code Snippet
-              </h4>
-              <pre className="bg-slate-950 text-slate-300 p-4 rounded-lg overflow-x-auto font-mono text-sm border-2 border-slate-700">
-                {vuln.code_snippet}
-              </pre>
+            <div className="h-full flex flex-col items-center justify-center text-zinc-600">
+              <Icons.Shield />
+              <p className="mt-4 text-sm">Select an issue to view details</p>
             </div>
           )}
         </div>
@@ -592,565 +287,305 @@ function VulnerabilityDetailModal({
   );
 }
 
-// Enhanced Scan Progress Component
-function ScanProgress({
-  scanId,
-  repoName,
-  onComplete,
-}: {
-  scanId: string;
-  repoName: string;
-  onComplete: (result: ScanResult) => void;
-}) {
+// --- SCAN PROGRESS ---
+function ScanProgress({ scanId, repoName, onComplete }: { scanId: string; repoName: string; onComplete: (result: ScanResult) => void; }) {
   const [status, setStatus] = useState<ScanStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let pollInterval: number | null = null;
-
+    let pollInterval: NodeJS.Timeout;
     const pollStatus = async () => {
       try {
-        const res = await fetch(
-          `${API_BASE_URL}/api/scanning/scans/${scanId}/status`,
-          { credentials: "include" }
-        );
-
-        if (!res.ok) throw new Error("Failed to fetch status");
+        const res = await fetch(`${API_BASE_URL}/api/scanning/scans/${scanId}/status`, { credentials: "include" });
+        if (!res.ok) throw new Error("Status check failed");
         const data = await res.json();
         setStatus(data);
 
-        if (data.status === "completed" || data.status === "failed") {
-          if (pollInterval) clearInterval(pollInterval);
-
-          if (data.status === "completed") {
-            const resultRes = await fetch(
-              `${API_BASE_URL}/api/scanning/scans/${scanId}`,
-              { credentials: "include" }
-            );
-            const result = await resultRes.json();
-            onComplete(result);
-          } else {
-            setError("Scan failed. Please try again.");
-          }
+        if (data.status === "completed") {
+          clearInterval(pollInterval);
+          const resultRes = await fetch(`${API_BASE_URL}/api/scanning/scans/${scanId}`, { credentials: "include" });
+          const result = await resultRes.json();
+          onComplete(result);
+        } else if (data.status === "failed") {
+          clearInterval(pollInterval);
+          setError("Scan execution failed.");
         }
-      } catch (err) {
-        console.error(err);
-        setError(err instanceof Error ? err.message : "Unknown error");
-        if (pollInterval) clearInterval(pollInterval);
+      } catch (err: any) {
+        setError(err.message);
+        clearInterval(pollInterval);
       }
     };
-
     pollStatus();
-    pollInterval = setInterval(pollStatus, 2000);
-
-    return () => {
-      if (pollInterval) clearInterval(pollInterval);
-    };
-  }, [scanId, onComplete]);
+    pollInterval = setInterval(pollStatus, 1500);
+    return () => clearInterval(pollInterval);
+  }, [scanId]);
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
-        <div className="bg-red-600 text-white p-8 rounded-2xl max-w-md w-full text-center shadow-2xl border-2 border-red-500">
-          <div className="text-6xl mb-4">❌</div>
-          <h3 className="text-2xl font-bold mb-2">Scan Failed</h3>
-          <p className="text-red-100">{error}</p>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+        <div className="bg-red-950/20 border border-red-900/50 p-6 rounded-lg max-w-md w-full text-center">
+          <h3 className="text-red-400 font-bold mb-2">Scan Failed</h3>
+          <p className="text-zinc-400 text-sm">{error}</p>
         </div>
       </div>
     );
   }
 
-  const progressNum = parseInt(status?.progress || "0");
+  const progress = parseInt(status?.progress || "0");
+  const steps = ["Queued", "Cloning", "Analyzing", "Finalizing"];
+  const stepIdx = status?.status === "queued" ? 0 : status?.status === "cloning" ? 1 : status?.status === "analyzing" ? 2 : 3;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900 flex items-center justify-center p-4">
-      <div className="bg-slate-800 bg-opacity-90 backdrop-blur-lg rounded-2xl p-8 max-w-2xl w-full shadow-2xl border-2 border-slate-700">
-        <div className="text-center">
-          {/* Animated Scanner Icon */}
-          <div className="mb-6 flex justify-center">
-            <div className="relative">
-              <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-5xl animate-pulse shadow-2xl">
-                🛡️
-              </div>
-              <div className="absolute inset-0 rounded-full bg-blue-400 opacity-25 animate-ping"></div>
-            </div>
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-lg">
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6 text-blue-500 animate-pulse">
+            <Icons.Shield />
           </div>
+          <h2 className="text-2xl font-bold text-zinc-100 mb-2">Scanning {repoName}</h2>
+          <p className="text-zinc-500 text-sm">Please wait while we analyze your codebase.</p>
+        </div>
 
-          <h2 className="text-3xl font-bold text-white mb-2">
-            Scanning Repository
-          </h2>
-          <p className="text-xl text-slate-300 mb-6">{repoName}</p>
+        <div className="space-y-8">
+           {/* Progress Bar */}
+           <div className="h-1 w-full bg-zinc-900 rounded-full overflow-hidden">
+             <div 
+               className="h-full bg-blue-500 transition-all duration-500 ease-out" 
+               style={{ width: `${progress}%` }}
+             ></div>
+           </div>
 
-          {status && (
-            <>
-              <div className="mb-6">
-                <p className="text-lg text-slate-200 mb-4 font-medium">
-                  {status.message}
-                </p>
-                
-                {/* Enhanced Progress Bar */}
-                <div className="w-full bg-slate-900 rounded-full h-6 overflow-hidden border-2 border-slate-700 shadow-inner">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 transition-all duration-500 flex items-center justify-center text-white text-xs font-bold shadow-lg"
-                    style={{ width: status.progress }}
-                  >
-                    {progressNum > 10 && status.progress}
-                  </div>
-                </div>
-                <p className="text-sm text-slate-400 mt-3">
-                  Progress: {status.progress}
-                </p>
-              </div>
-
-              {/* Status Stages */}
-              <div className="grid grid-cols-4 gap-3 text-xs">
-                {[
-                  { name: "Queue", status: "queued", icon: "⏳" },
-                  { name: "Clone", status: "cloning", icon: "📥" },
-                  { name: "Analyze", status: "analyzing", icon: "🔍" },
-                  { name: "Scan", status: "scanning", icon: "🛡️" },
-                ].map((stage) => {
-                  const isActive = status.status === stage.status;
-                  const isPast =
-                    progressNum >
-                    (stage.status === "queued"
-                      ? 0
-                      : stage.status === "cloning"
-                      ? 10
-                      : stage.status === "analyzing"
-                      ? 20
-                      : 30);
-                  return (
-                    <div
-                      key={stage.status}
-                      className={`p-3 rounded-lg transition-all ${
-                        isActive
-                          ? "bg-blue-600 text-white scale-105"
-                          : isPast
-                          ? "bg-green-600 text-white"
-                          : "bg-slate-700 text-slate-400"
-                      }`}
-                    >
-                      <div className="text-2xl mb-1">{stage.icon}</div>
-                      <div className="font-medium">{stage.name}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
+           {/* Steps */}
+           <div className="grid grid-cols-4 gap-2">
+             {steps.map((step, idx) => (
+               <div key={step} className={`flex flex-col items-center gap-2 ${idx <= stepIdx ? "text-blue-400" : "text-zinc-700"}`}>
+                 <div className={`w-3 h-3 rounded-full ${idx === stepIdx ? "bg-blue-500 animate-ping" : idx < stepIdx ? "bg-blue-500" : "bg-zinc-800"}`} />
+                 <span className="text-[10px] font-medium uppercase tracking-wider">{step}</span>
+               </div>
+             ))}
+           </div>
         </div>
       </div>
     </div>
   );
 }
 
-// Main Page (Repository List)
+// --- REPOSITORY CARD ---
+function RepoCard({ repo, onScanStart, scanning }: { repo: Repo; onScanStart: () => void; scanning: boolean }) {
+  return (
+    <div className="group bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-lg p-5 transition-all duration-200">
+      <div className="flex justify-between items-start gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-1.5 bg-zinc-800 rounded text-zinc-400">
+              <Icons.Github />
+            </div>
+            <a href={repo.html_url} target="_blank" className="text-base font-semibold text-zinc-200 hover:text-blue-400 truncate transition-colors">
+              {repo.name}
+            </a>
+            <span className={`px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider border rounded-full ${
+              repo.private 
+              ? "bg-amber-500/10 text-amber-500 border-amber-500/20" 
+              : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+            }`}>
+              {repo.private ? "Private" : "Public"}
+            </span>
+          </div>
+          
+          <p className="text-sm text-zinc-500 line-clamp-2 mb-4 h-10">
+            {repo.description || "No description provided."}
+          </p>
+
+          <div className="flex items-center gap-4 text-xs text-zinc-500 font-mono">
+             {repo.language && (
+               <span className="flex items-center gap-1.5">
+                 <span className="w-2 h-2 rounded-full bg-blue-500/50"></span>
+                 {repo.language}
+               </span>
+             )}
+             <span className="flex items-center gap-1"><Icons.Star /> {repo.stargazers_count}</span>
+             <span className="flex items-center gap-1"><Icons.Fork /> {repo.forks_count}</span>
+             <span className="hidden sm:inline">Updated {timeAgo(repo.updated_at)}</span>
+          </div>
+        </div>
+
+        <button
+          onClick={onScanStart}
+          disabled={scanning}
+          className={`shrink-0 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+            scanning 
+            ? "bg-zinc-800 text-zinc-500 cursor-not-allowed" 
+            : "bg-zinc-100 text-zinc-900 hover:bg-white shadow-lg hover:shadow-xl"
+          }`}
+        >
+          {scanning ? "Starting..." : "Scan Now"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- MAIN PAGE ---
 export default function RepositoriesPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [repos, setRepos] = useState<Repo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [type, setType] = useState("all");
-  const [page, setPage] = useState(1);
-  const per_page = 30;
-
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [activeScan, setActiveScan] = useState<string | null>(null);
+  const [activeScanId, setActiveScanId] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
-  const addToast = (message: string, type?: "success" | "error" | "info") => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => removeToast(id), 5000);
-  };
-
-  const removeToast = (id: number) =>
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-
-  const fetchData = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const profileRes = await fetch(`${API_BASE_URL}/api/github/profile`, {
-        credentials: "include",
-      });
-
-      if (profileRes.status === 401) {
-        setError("not-connected");
-        setLoading(false);
-        return;
-      }
-
-      if (!profileRes.ok) {
-        throw new Error(`Profile API error: ${profileRes.status}`);
-      }
-
-      const profileData = await profileRes.json();
-      setProfile(profileData);
-
-      const params = new URLSearchParams({
-        query,
-        type,
-        sort: "updated",
-        direction: "desc",
-        page: page.toString(),
-        per_page: per_page.toString(),
-      });
-
-      const reposRes = await fetch(
-        `${API_BASE_URL}/api/github/repos?${params}`,
-        { credentials: "include" }
-      );
-
-      if (!reposRes.ok) {
-        throw new Error(`Repos API error: ${reposRes.status}`);
-      }
-
-      const reposData = await reposRes.json();
-      setRepos(reposData);
-    } catch (e: any) {
-      const errorMessage = e.message || "Failed to load data";
-      setError(errorMessage);
-      addToast(errorMessage, "error");
-    } finally {
-      setLoading(false);
-    }
+  const addToast = (message: string, type: "success" | "error" | "info" = "info") => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
   };
 
   useEffect(() => {
-    fetchData();
-  }, [query, type, page]);
+    const init = async () => {
+      setLoading(true);
+      try {
+        const pRes = await fetch(`${API_BASE_URL}/api/github/profile`, { credentials: "include" });
+        if (pRes.status === 401) { setError("auth"); return; }
+        const pData = await pRes.json();
+        setProfile(pData);
 
-  const handleConnectGitHub = () => {
-    window.location.href = `${API_BASE_URL}/auth/github/login?redirect_to=/repositories`;
+        const rRes = await fetch(`${API_BASE_URL}/api/github/repos?sort=updated&per_page=50`, { credentials: "include" });
+        if (!rRes.ok) throw new Error("Failed to load repositories");
+        const rData = await rRes.json();
+        setRepos(rData);
+      } catch (err) {
+        setError("Failed to load data");
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
+
+  const handleScanStart = async (repo: Repo) => {
+    try {
+      const owner = repo.owner?.login || repo.full_name?.split("/")[0] || "";
+      const res = await fetch(`${API_BASE_URL}/api/scanning/repos/${owner}/${repo.name}/scan?branch=main`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include"
+      });
+      if (!res.ok) throw new Error("Failed to start scan");
+      const data = await res.json();
+      setActiveScanId(data.scan_id);
+    } catch (err) {
+      addToast("Failed to initiate scan", "error");
+    }
   };
 
-  if (activeScan && !scanResult) {
-    const repoName = repos.find((r) => r.id.toString() === activeScan)?.name || "repository";
-    return (
-      <ScanProgress
-        scanId={activeScan}
-        repoName={repoName}
-        onComplete={(result) => {
-          setScanResult(result);
-          addToast(`✅ Scan completed! Found ${result.total_issues} issues`, "success");
-        }}
-      />
-    );
+  // Filter Repos
+  const filteredRepos = repos.filter(r => r.name.toLowerCase().includes(query.toLowerCase()));
+
+  // --- RENDERING ---
+
+  if (activeScanId && !scanResult) {
+    const repoName = repos.find(r => r.id.toString() === activeScanId)?.name || "Repository";
+    return <ScanProgress scanId={activeScanId} repoName={repoName} onComplete={(res) => {
+      setScanResult(res);
+      addToast(`Scan completed for ${res.repo_name}`, "success");
+    }} />;
   }
 
   if (scanResult) {
     return (
       <>
-        <Toasts toasts={toasts} removeToast={removeToast} />
-        <ScanResultsModal
-          result={scanResult}
-          onClose={() => {
-            setScanResult(null);
-            setActiveScan(null);
-          }}
-        />
+        <ScanResultsModal result={scanResult} onClose={() => { setScanResult(null); setActiveScanId(null); }} />
+        <Toasts toasts={toasts} removeToast={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
       </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100">
-      <Toasts toasts={toasts} removeToast={removeToast} />
-
-      {/* Enhanced Header */}
-      <div className="border-b-2 border-slate-700 bg-slate-900 bg-opacity-80 backdrop-blur-lg sticky top-0 z-30 shadow-lg">
-        <div className="mx-auto max-w-7xl px-4 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-blue-500/30">
+      <Toasts toasts={toasts} removeToast={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
+      
+      {/* Navbar */}
+      <header className="sticky top-0 z-20 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-xl shadow-lg">
-              🛡️
+            <div className="bg-blue-600 w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-900/20">
+              <Icons.Shield />
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-white">SecureScan</h1>
-              <p className="text-xs text-slate-400">
-                {profile?.login || "User"}'s Repositories
-              </p>
-            </div>
+            <span className="font-bold text-lg tracking-tight">ReVAMP</span>
           </div>
           {profile && (
-            <div className="flex items-center gap-2">
-              <img
-                src={profile.avatar_url}
-                alt={profile.login}
-                className="w-10 h-10 rounded-full border-2 border-slate-600"
-              />
+            <div className="flex items-center gap-3 pl-6 border-l border-zinc-800">
+              <div className="text-right hidden sm:block">
+                <p className="text-sm font-medium text-zinc-200">{profile.name || profile.login}</p>
+              </div>
+              <img src={profile.avatar_url} alt="" className="w-8 h-8 rounded-full ring-2 ring-zinc-800" />
             </div>
           )}
         </div>
-      </div>
+      </header>
 
-      <div className="mx-auto max-w-7xl px-4 py-6">
-        {/* Profile Section */}
-        {profile && !error && (
-          <div className="bg-slate-800 bg-opacity-50 backdrop-blur-sm rounded-2xl p-6 mb-6 border-2 border-slate-700 shadow-xl">
-            <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
-              <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-slate-600 shadow-lg">
-                <img
-                  src={profile.avatar_url}
-                  alt="avatar"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex-1 text-center md:text-left">
-                <h2 className="text-3xl font-bold text-white mb-2">
-                  {profile.name || profile.login}
-                </h2>
-                {profile.name && (
-                  <p className="text-slate-400 mb-2">@{profile.login}</p>
-                )}
-                {profile.bio && (
-                  <p className="text-slate-300 leading-relaxed">{profile.bio}</p>
-                )}
-              </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {error === "auth" ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center mb-6 text-zinc-500">
+               <Icons.Github />
             </div>
-          </div>
-        )}
-
-        {/* Search and Filters */}
-        {!error && (
-          <div className="flex flex-col md:flex-row gap-3 mb-6">
-            <input
-              placeholder="🔍 Search repositories..."
-              value={query}
-              onChange={(e) => {
-                setPage(1);
-                setQuery(e.target.value);
-              }}
-              className="flex-1 bg-slate-800 border-2 border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-lg"
-            />
-            <select
-              value={type}
-              onChange={(e) => {
-                setPage(1);
-                setType(e.target.value);
-              }}
-              className="bg-slate-800 border-2 border-slate-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-lg"
+            <h2 className="text-2xl font-bold mb-4">Connect to GitHub</h2>
+            <p className="text-zinc-400 max-w-md mb-8">Connect your account to access your repositories and start scanning for vulnerabilities.</p>
+            <button 
+              onClick={() => window.location.href = `${API_BASE_URL}/auth/github/login?redirect_to=/repositories`}
+              className="px-6 py-3 bg-zinc-100 text-zinc-900 font-semibold rounded-lg hover:bg-white transition-colors"
             >
-              <option value="all">All Repositories</option>
-              <option value="owner">Owner</option>
-              <option value="member">Member</option>
-            </select>
-          </div>
-        )}
-
-        {/* Not Connected State */}
-        {error === "not-connected" && (
-          <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl p-8 text-center shadow-2xl border-2 border-blue-500">
-            <div className="text-6xl mb-4">🔒</div>
-            <h3 className="text-2xl font-bold text-white mb-3">
-              Connect Your GitHub Account
-            </h3>
-            <p className="text-blue-100 mb-6 max-w-md mx-auto">
-              Link your GitHub account to scan your repositories for security vulnerabilities
-            </p>
-            <button
-              onClick={handleConnectGitHub}
-              className="bg-white text-blue-600 hover:bg-blue-50 rounded-lg px-8 py-3 font-bold transition-colors shadow-lg transform hover:scale-105"
-            >
-              Connect GitHub
+              Authorize GitHub
             </button>
           </div>
-        )}
+        ) : (
+          <>
+            {/* Header & Controls */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+               <div>
+                 <h1 className="text-2xl font-bold text-zinc-100">Repositories</h1>
+                 <p className="text-zinc-400 text-sm mt-1">Manage and scan your codebases.</p>
+               </div>
+               <div className="relative group w-full md:w-96">
+                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-blue-400 transition-colors">
+                   <Icons.Search />
+                 </div>
+                 <input 
+                    type="text" 
+                    placeholder="Search repositories..." 
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 rounded-lg pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50 transition-all placeholder:text-zinc-600"
+                 />
+               </div>
+            </div>
 
-        {/* Loading State */}
-        {loading && (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin h-12 w-12 border-4 border-blue-500 border-t-transparent rounded-full mb-4"></div>
-            <p className="text-slate-400">Loading repositories...</p>
-          </div>
-        )}
-
-        {/* Error State */}
-        {error && error !== "not-connected" && (
-          <div className="bg-red-600 rounded-2xl p-6 text-center shadow-xl border-2 border-red-500">
-            <div className="text-4xl mb-3">❌</div>
-            <p className="text-white font-medium">{error}</p>
-          </div>
-        )}
-
-        {/* Repository List */}
-        {!loading && !error && (
-          <div className="space-y-4">
-            {repos.length === 0 ? (
-              <div className="bg-slate-800 rounded-2xl p-12 text-center border-2 border-slate-700">
-                <div className="text-6xl mb-4">📁</div>
-                <p className="text-xl text-slate-400">No repositories found</p>
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[1,2,3,4,5,6].map(i => (
+                  <div key={i} className="h-40 bg-zinc-900/30 rounded-lg animate-pulse" />
+                ))}
               </div>
+            ) : filteredRepos.length === 0 ? (
+               <div className="text-center py-20 border-2 border-dashed border-zinc-800 rounded-xl">
+                 <p className="text-zinc-500 font-medium">No repositories found matching "{query}"</p>
+               </div>
             ) : (
-              <>
-                {repos.map((repo) => (
-                  <RepoCard
-                    key={repo.id}
-                    repo={repo}
-                    addToast={addToast}
-                    onScanStart={(scanId) => setActiveScan(scanId)}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredRepos.map(repo => (
+                  <RepoCard 
+                    key={repo.id} 
+                    repo={repo} 
+                    scanning={activeScanId === repo.id.toString()}
+                    onScanStart={() => handleScanStart(repo)} 
                   />
                 ))}
-
-                {/* Pagination */}
-                <div className="flex items-center justify-center gap-4 mt-8 pb-8">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed border-2 border-slate-600 rounded-lg px-6 py-3 font-medium transition-all transform hover:scale-105 disabled:hover:scale-100 shadow-lg"
-                  >
-                    ← Previous
-                  </button>
-                  <span className="text-slate-300 px-4 py-2 bg-slate-800 rounded-lg border-2 border-slate-700 font-medium">
-                    Page {page}
-                  </span>
-                  <button
-                    onClick={() => setPage((p) => p + 1)}
-                    disabled={repos.length < per_page}
-                    className="bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed border-2 border-slate-600 rounded-lg px-6 py-3 font-medium transition-all transform hover:scale-105 disabled:hover:scale-100 shadow-lg"
-                  >
-                    Next →
-                  </button>
-                </div>
-              </>
+              </div>
             )}
-          </div>
+          </>
         )}
-      </div>
-    </div>
-  );
-}
-
-// Enhanced Repository Card
-function RepoCard({
-  repo,
-  addToast,
-  onScanStart,
-}: {
-  repo: Repo;
-  addToast: (msg: string, type?: "success" | "error" | "info") => void;
-  onScanStart: (scanId: string) => void;
-}) {
-  const [scanning, setScanning] = useState(false);
-
-  const visibility = repo.private
-    ? "Private"
-    : repo.visibility
-    ? repo.visibility[0].toUpperCase() + repo.visibility.slice(1)
-    : "Public";
-
-  const handleScan = async () => {
-    setScanning(true);
-    try {
-      const owner = repo.owner?.login || repo.full_name?.split("/")[0];
-
-      const res = await fetch(
-        `${API_BASE_URL}/api/scanning/repos/${owner}/${repo.name}/scan?branch=main&scanner=auto`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!res.ok) {
-        const error = await res.text();
-        throw new Error(`Scan failed: ${res.status}`);
-      }
-
-      const data = await res.json();
-      addToast(`🚀 Scan initiated for ${repo.name}`, "info");
-      onScanStart(data.scan_id);
-    } catch (err: any) {
-      console.error(err);
-      addToast(`❌ Scan failed: ${err.message}`, "error");
-      setScanning(false);
-    }
-  };
-
-  return (
-    <div className="bg-slate-800 bg-opacity-70 backdrop-blur-sm border-2 border-slate-700 rounded-xl hover:border-blue-500 transition-all shadow-lg hover:shadow-2xl transform hover:scale-[1.02]">
-      <div className="p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 flex-wrap mb-3">
-              {repo.owner?.avatar_url && (
-                <img
-                  src={repo.owner.avatar_url}
-                  alt={repo.owner.login}
-                  className="w-8 h-8 rounded-full border-2 border-slate-600"
-                />
-              )}
-              <a
-                href={repo.html_url ?? "#"}
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-400 hover:text-blue-300 hover:underline text-xl font-bold truncate transition-colors"
-              >
-                {repo.name}
-              </a>
-              <span className={`text-xs px-3 py-1 rounded-full font-medium ${
-                repo.private
-                  ? "bg-yellow-600 text-white"
-                  : "bg-green-600 text-white"
-              }`}>
-                {visibility}
-              </span>
-            </div>
-
-            {repo.description && (
-              <p className="text-sm text-slate-300 mb-4 leading-relaxed">
-                {repo.description}
-              </p>
-            )}
-
-            <div className="flex gap-4 items-center flex-wrap text-sm text-slate-400">
-              {repo.language && (
-                <span className="flex items-center gap-2 bg-slate-700 px-3 py-1 rounded-full">
-                  <span className="w-3 h-3 rounded-full bg-yellow-400"></span>
-                  {repo.language}
-                </span>
-              )}
-              <span className="flex items-center gap-1">⭐ {repo.stargazers_count ?? 0}</span>
-              <span className="flex items-center gap-1">🔱 {repo.forks_count ?? 0}</span>
-              {repo.size && (
-                <span className="flex items-center gap-1">
-                  📦 {formatBytes(repo.size * 1024)}
-                </span>
-              )}
-              {repo.updated_at && (
-                <span>Updated {timeAgo(repo.updated_at)}</span>
-              )}
-            </div>
-          </div>
-
-          <button
-            onClick={handleScan}
-            disabled={scanning}
-            className={`px-6 py-3 rounded-lg font-bold transition-all transform shadow-lg ${
-              scanning
-                ? "bg-slate-600 text-slate-400 cursor-not-allowed"
-                : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white hover:scale-105 hover:shadow-2xl"
-            }`}
-          >
-            {scanning ? (
-              <span className="flex items-center gap-2">
-                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                Scanning...
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                🛡️ Scan
-              </span>
-            )}
-          </button>
-        </div>
-      </div>
+      </main>
     </div>
   );
 }

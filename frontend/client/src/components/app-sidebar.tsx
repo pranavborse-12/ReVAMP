@@ -1,26 +1,25 @@
 import {
-    AlertTriangle,
     BarChart3,
     BookOpen,
-    CheckCircle,
     Clock,
     FileText,
     GitBranch,
+    LogOut,
+    PanelLeft,
     Search,
     Settings,
     Shield,
-    XCircle,
-    PanelLeft,
-    LogOut
+    User
 } from "lucide-react"
 import { NavLink } from "react-router-dom"
+import { useAuth } from "../context/AuthProvider"
 import { cn } from "../lib/utils"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
-import { Separator } from "./ui/separator"
 import {
     Sidebar,
     SidebarContent,
+    SidebarFooter,
     SidebarGroup,
     SidebarGroupContent,
     SidebarGroupLabel,
@@ -28,15 +27,14 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
-    SidebarFooter,
     useSidebar,
 } from "./ui/sidebar"
-import { useAuth } from "../context/AuthProvider"
 
+// Navigation Configuration
 const dashboardItems = [
   { title: "Overview", url: "/dashboard", icon: BarChart3, badge: null },
   { title: "Repositories", url: "/repositories", icon: GitBranch, badge: "12" },
-  { title: "Vulnerabilities", url: "/vulnerabilities", icon: AlertTriangle, badge: "24" },
+  { title: "Vulnerabilities", url: "/vulnerabilities", icon: Shield, badge: "24" },
   { title: "Security Reports", url: "/reports", icon: FileText, badge: null },
 ]
 
@@ -46,44 +44,6 @@ const toolsItems = [
   { title: "Documentation", url: "/docs", icon: BookOpen, badge: null },
   { title: "Settings", url: "/settings", icon: Settings, badge: null },
 ]
-
-const recentVulnerabilities = [
-  { id: "vuln-001", title: "SQL Injection Vulnerability", severity: "critical", file: "auth/login.js", discoveredAt: "2 hours ago" },
-  { id: "vuln-002", title: "Cross-Site Scripting (XSS)", severity: "high", file: "utils/sanitize.js", discoveredAt: "5 hours ago" },
-  { id: "vuln-003", title: "Insecure Direct Object Reference", severity: "medium", file: "api/users.js", discoveredAt: "1 day ago" },
-]
-
-const recentScanHistory = [
-  { id: "event-001", repository: "secure-app-frontend", status: "success", timestamp: "2 hours ago", vulnerabilities: 24 },
-  { id: "event-002", repository: "api-gateway", status: "success", timestamp: "4 hours ago", vulnerabilities: 0 },
-  { id: "event-003", repository: "user-service", status: "error", timestamp: "6 hours ago", vulnerabilities: null },
-]
-
-const getSeverityColor = (severity: string) => {
-  switch (severity) {
-    case "critical": return "text-red-500"
-    case "high": return "text-orange-500"
-    case "medium": return "text-yellow-500"
-    case "low": return "text-green-500"
-    default: return "text-gray-500"
-  }
-}
-
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case "success": return CheckCircle
-    case "error": return XCircle
-    default: return Clock
-  }
-}
-
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "success": return "text-green-500"
-    case "error": return "text-red-500"
-    default: return "text-gray-500"
-  }
-}
 
 export function AppSidebar() {
   const { open, setOpen } = useSidebar()
@@ -99,56 +59,78 @@ export function AppSidebar() {
 
   return (
     <>
-      {/* Toggle button that appears when sidebar is closed - ChatGPT/Claude style */}
+      {/* Floating Toggle Button (Visible when closed) */}
       {!open && (
         <Button
           variant="ghost"
           size="icon"
-          className="fixed left-2 top-4 z-50 h-8 w-8 rounded-md border bg-background shadow-md hover:bg-accent"
+          className="fixed left-3 top-3 z-50 h-9 w-9 rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-400 shadow-xl hover:bg-zinc-800 hover:text-zinc-100 transition-all"
           onClick={() => setOpen(true)}
         >
           <PanelLeft className="h-4 w-4" />
         </Button>
       )}
 
-      <Sidebar>
-        <SidebarHeader className="p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Shield className="h-6 w-6 text-primary" />
-              <span className="font-semibold text-lg">ReVAMP</span>
+      <Sidebar className="border-r border-zinc-800 bg-zinc-950 text-zinc-300">
+        {/* Header / Brand */}
+        <SidebarHeader className="h-16 flex items-center justify-between px-4 border-b border-zinc-800/50">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shadow-lg shadow-blue-900/20">
+              <Shield className="h-5 w-5" />
             </div>
-            {/* Toggle button inside sidebar to close it */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setOpen(false)}
-            >
-              <PanelLeft className="h-4 w-4" />
-            </Button>
+            <div className="flex flex-col">
+              <span className="font-bold text-sm tracking-tight text-zinc-100">ReVAMP</span>
+              <span className="text-[10px] text-zinc-500 font-medium">Security Platform</span>
+            </div>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+            onClick={() => setOpen(false)}
+          >
+            <PanelLeft className="h-4 w-4" />
+          </Button>
         </SidebarHeader>
-        <SidebarContent>
+
+        <SidebarContent className="px-2 py-4">
+          {/* Main Navigation */}
           <SidebarGroup>
-            <SidebarGroupLabel>Dashboard</SidebarGroupLabel>
+            <SidebarGroupLabel className="px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">
+              Platform
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {dashboardItems.map((item) => (
-                  <SidebarMenuItem key={item.title}>
+                  <SidebarMenuItem key={item.title} className="mb-1">
                     <SidebarMenuButton asChild>
                       <NavLink 
                         to={item.url} 
                         className={({ isActive }) => cn(
-                          "flex items-center justify-between w-full p-2 rounded-md transition-colors",
-                          isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+                          "group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+                          isActive 
+                            ? "bg-zinc-800 text-white shadow-sm" 
+                            : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
                         )}
                       >
-                        <div className="flex items-center gap-2">
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.title}</span>
-                        </div>
-                        {item.badge && (<Badge variant="secondary" className="text-xs">{item.badge}</Badge>)}
+                        {({ isActive }) => (
+                          <>
+                            <div className="flex items-center gap-3">
+                              <item.icon className={cn("h-4 w-4 transition-colors", isActive ? "text-blue-500" : "text-zinc-500 group-hover:text-zinc-300")} />
+                              <span>{item.title}</span>
+                            </div>
+                            {item.badge && (
+                              <Badge 
+                                className={cn(
+                                  "h-5 px-1.5 text-[10px] border-none shadow-none",
+                                  isActive ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400"
+                                )}
+                              >
+                                {item.badge}
+                              </Badge>
+                            )}
+                          </>
+                        )}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -157,25 +139,31 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
 
-          <SidebarGroup>
-            <SidebarGroupLabel>Tools & Reports</SidebarGroupLabel>
+          {/* Tools Section */}
+          <SidebarGroup className="mt-6">
+            <SidebarGroupLabel className="px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">
+              Tools & Config
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {toolsItems.map((item) => (
-                  <SidebarMenuItem key={item.title}>
+                  <SidebarMenuItem key={item.title} className="mb-1">
                     <SidebarMenuButton asChild>
                       <NavLink 
                         to={item.url} 
                         className={({ isActive }) => cn(
-                          "flex items-center justify-between w-full p-2 rounded-md transition-colors",
-                          isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+                          "group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+                          isActive 
+                            ? "bg-zinc-800 text-white shadow-sm" 
+                            : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
                         )}
                       >
-                        <div className="flex items-center gap-2">
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.title}</span>
-                        </div>
-                        {item.badge && (<Badge variant="secondary" className="text-xs">{item.badge}</Badge>)}
+                         {({ isActive }) => (
+                          <div className="flex items-center gap-3">
+                            <item.icon className={cn("h-4 w-4 transition-colors", isActive ? "text-blue-500" : "text-zinc-500 group-hover:text-zinc-300")} />
+                            <span>{item.title}</span>
+                          </div>
+                        )}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -183,88 +171,32 @@ export function AppSidebar() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-
-          {/* Commented out sections - uncomment if needed */}
-          {/* <SidebarGroup>
-            <SidebarGroupLabel className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-orange-500" />
-              Recent Vulnerabilities
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <div className="space-y-2 px-2">
-                {recentVulnerabilities.map((vuln, index) => (
-                  <div key={vuln.id} className="space-y-1">
-                    <div className="flex items-start gap-2 p-2 rounded-md hover-elevate">
-                      <Shield className={`h-3 w-3 mt-0.5 ${getSeverityColor(vuln.severity)}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium truncate">{vuln.title}</div>
-                        <div className="text-xs text-muted-foreground truncate font-mono">{vuln.file}</div>
-                        <div className="text-xs text-muted-foreground">{vuln.discoveredAt}</div>
-                      </div>
-                      <Badge variant={vuln.severity === "critical" ? "destructive" : "secondary"} className="text-xs h-4">{vuln.severity.charAt(0).toUpperCase()}</Badge>
-                    </div>
-                    {index < recentVulnerabilities.length - 1 && (<Separator className="my-2" />)}
-                  </div>
-                ))}
-                <Button variant="ghost" size="sm" className="w-full mt-2 text-xs">View All</Button>
-              </div>
-            </SidebarGroupContent>
-          </SidebarGroup> */}
-
-          {/* <SidebarGroup>
-            <SidebarGroupLabel className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-primary" />
-              Recent Scan Activity
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <div className="space-y-2 px-2">
-                {recentScanHistory.map((scan, index) => {
-                  const StatusIcon = getStatusIcon(scan.status)
-                  return (
-                    <div key={scan.id} className="space-y-1">
-                      <div className="flex items-start gap-2 p-2 rounded-md hover-elevate">
-                        <StatusIcon className={`h-3 w-3 mt-0.5 ${getStatusColor(scan.status)}`} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium truncate">{scan.repository}</div>
-                          <div className="text-xs text-muted-foreground">{scan.timestamp}</div>
-                          {scan.vulnerabilities !== null && (<div className="text-xs text-muted-foreground">{scan.vulnerabilities > 0 ? `${scan.vulnerabilities} vulnerabilities` : 'No issues'}</div>)}
-                        </div>
-                        <Badge variant={scan.status === "error" ? "destructive" : "secondary"} className="text-xs h-4">{scan.status === "success" ? "\u2713" : scan.status === "error" ? "\u2717" : "\u25cb"}</Badge>
-                      </div>
-                      {index < recentScanHistory.length - 1 && (<Separator className="my-2" />)}
-                    </div>
-                  )
-                })}
-                <Button variant="ghost" size="sm" className="w-full mt-2 text-xs">View All</Button>
-              </div>
-            </SidebarGroupContent>
-          </SidebarGroup> */}
         </SidebarContent>
 
-        {/* Logout Section at Bottom */}
-        <SidebarFooter className="p-4 border-t">
-          <div className="space-y-2">
-            {/* User Info */}
-            {user && (
-              <div className="px-2 py-1">
-                <p className="text-xs text-muted-foreground truncate">
-                  {user.email}
-                </p>
-              </div>
-            )}
-            
-            <Separator />
-            
-            {/* Logout Button */}
-            <Button
-              variant="ghost"
-              className="w-full justify-start gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={handleLogout}
-            >
-              <LogOut className="h-4 w-4" />
-              <span>Logout</span>
-            </Button>
+        {/* Footer / User Profile */}
+        <SidebarFooter className="p-4 border-t border-zinc-800/50 bg-zinc-900/20">
+          <div className="flex items-center gap-3 mb-4 px-1">
+            <div className="h-8 w-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-400">
+              <User className="h-4 w-4" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-medium text-zinc-200 truncate">
+                {user?.email?.split('@')[0] || "Guest User"}
+              </span>
+              <span className="text-[10px] text-zinc-500 truncate">
+                {user?.email || "Not connected"}
+              </span>
+            </div>
           </div>
+          
+          <Button
+            variant="outline"
+            className="w-full justify-start gap-2 border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:bg-red-950/30 hover:text-red-400 hover:border-red-900/50 transition-all h-9 text-xs"
+            onClick={handleLogout}
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span>Sign Out</span>
+          </Button>
         </SidebarFooter>
       </Sidebar>
     </>

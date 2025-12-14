@@ -40,6 +40,25 @@ def run_command_with_timeout(
         return -1, "", str(e)
 
 
+def get_dir_size(path: str) -> int:
+    """
+    Get directory size in bytes (fast implementation)
+    """
+    total = 0
+    try:
+        with os.scandir(path) as it:
+            for entry in it:
+                if entry.is_file(follow_symlinks=False):
+                    total += entry.stat().st_size
+                elif entry.is_dir(follow_symlinks=False):
+                    # Skip .git directory for speed
+                    if entry.name != '.git':
+                        total += get_dir_size(entry.path)
+    except (PermissionError, OSError):
+        pass
+    return total
+
+
 def detect_languages(repo_path: str, max_files: int = 10000) -> Set[str]:
     """
     Enhanced language detection with better coverage

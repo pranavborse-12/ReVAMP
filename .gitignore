@@ -29,3 +29,14 @@ out/
 # Other
 .DS_Store
 *.swp
+
+# OS files
+desktop.ini
+.DS_Store
+
+
+# Editor
+.vscode/
+
+# Logs
+*.log
