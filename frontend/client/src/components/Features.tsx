@@ -1,131 +1,96 @@
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
 import { 
-  Shield, 
-  Zap, 
-  Github, 
-  FileText, 
-  AlertTriangle, 
-  CheckCircle,
-  Clock,
-  Users,
-  Lock
+  Shield, Zap, Github, FileText, Lock, 
+  BarChart3, CheckCircle2 
 } from 'lucide-react';
+import { CardBody, CardContainer, CardItem } from "./ui/3d-card";
 
 const features = [
   {
+    title: "OWASP Detection",
+    description: "Automatic protection against SQLi, XSS, and the full OWASP Top 10.",
     icon: Shield,
-    title: 'OWASP Top 10 Detection',
-    description: 'Comprehensive scanning for all OWASP Top 10 security vulnerabilities including injection attacks, broken authentication, and sensitive data exposure.',
-    badge: 'Core Feature'
+    color: "bg-red-500/10 text-red-500"
   },
   {
-    icon: Zap,
-    title: 'Lightning Fast Scans',
-    description: 'Advanced pattern matching engine delivers complete security reports in seconds, not hours. Perfect for CI/CD integration.',
-    badge: 'Performance'
-  },
-  {
+    title: "CI/CD Integration",
+    description: "Block insecure builds in GitHub Actions, GitLab CI, or Jenkins.",
     icon: Github,
-    title: 'GitHub Integration',
-    description: 'Seamless integration with your GitHub repositories. Automatic scanning on push, pull request analysis, and status checks.',
-    badge: 'Integration'
+    color: "bg-zinc-800 text-white"
   },
   {
+    title: "Instant Remediation",
+    description: "AI-generated pull requests to fix vulnerabilities automatically.",
+    icon: Zap,
+    color: "bg-yellow-500/10 text-yellow-500"
+  },
+  {
+    title: "Compliance Reports",
+    description: "One-click PDF generation for SOC2, HIPAA, and ISO 27001.",
     icon: FileText,
-    title: 'Detailed Reports',
-    description: 'Get comprehensive vulnerability reports with exact file locations, severity ratings, and step-by-step remediation guidance.',
-    badge: 'Reporting'
+    color: "bg-blue-500/10 text-blue-500"
   },
   {
-    icon: AlertTriangle,
-    title: 'Smart Prioritization',
-    description: 'AI-powered risk assessment automatically prioritizes vulnerabilities by exploitability, impact, and your specific codebase context.',
-    badge: 'AI-Powered'
+    title: "Secret Scanning",
+    description: "Detect hardcoded API keys and credentials before they leak.",
+    icon: Lock,
+    color: "bg-emerald-500/10 text-emerald-500"
   },
   {
-    icon: CheckCircle,
-    title: 'Compliance Ready',
-    description: 'Built-in compliance checks for SOC 2, GDPR, HIPAA, and other security standards. Generate audit-ready documentation.',
-    badge: 'Compliance'
+    title: "Risk Analytics",
+    description: "Visualize your security posture trends over time.",
+    icon: BarChart3,
+    color: "bg-purple-500/10 text-purple-500"
   }
-];
-
-const stats = [
-  { icon: Clock, value: '2.3s', label: 'Average Scan Time' },
-  { icon: Shield, value: '99.2%', label: 'Detection Accuracy' },
-  { icon: Users, value: '10k+', label: 'Repositories Scanned' },
-  { icon: Lock, value: 'SOC 2', label: 'Security Certified' }
 ];
 
 export function Features() {
   return (
-    <section className="py-24 bg-muted/30">
+    <section className="py-24 bg-black relative z-10">
       <div className="container max-w-7xl mx-auto px-6">
-        <div className="text-center space-y-4 mb-16">
-          <Badge variant="outline" className="w-fit mx-auto">
-            <Shield className="h-3 w-3 mr-1" />
-            Security Features
-          </Badge>
-          <h2 className="text-4xl font-bold">
-            Enterprise-Grade Security Detection
+        <div className="text-center mb-16">
+          <h2 className="text-3xl md:text-5xl font-bold text-white mb-4">
+            Security at the speed of code.
           </h2>
-          <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-            Our advanced security engine combines static analysis, dynamic testing, and AI-powered 
-            risk assessment to protect your code from the most sophisticated threats.
+          <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
+            Everything you need to secure your application, packed into a beautiful dashboard.
           </p>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-          {stats.map((stat, index) => (
-            <Card key={index} className="text-center p-6">
-              <CardContent className="space-y-3 p-0">
-                <stat.icon className="h-8 w-8 text-primary mx-auto" />
-                <div>
-                  <div className="text-3xl font-bold">{stat.value}</div>
-                  <div className="text-sm text-muted-foreground">{stat.label}</div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Features Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {features.map((feature, index) => (
-            <Card key={index} className="relative hover-elevate">
-              <CardHeader>
-                <div className="flex items-center justify-between mb-4">
-                  <feature.icon className="h-8 w-8 text-primary" />
-                  <Badge variant="secondary" className="text-xs">
-                    {feature.badge}
-                  </Badge>
-                </div>
-                <CardTitle className="text-xl">{feature.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground leading-relaxed">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {features.map((feature, i) => (
+            <CardContainer key={i} className="inter-var">
+              <CardBody className="bg-zinc-900 relative group/card dark:hover:shadow-2xl dark:hover:shadow-emerald-500/[0.1] dark:bg-black dark:border-white/[0.2] border-black/[0.1] w-full h-auto rounded-xl p-6 border">
+                <CardItem
+                  translateZ="50"
+                  className="w-12 h-12 rounded-lg flex items-center justify-center mb-4 transition-colors"
+                >
+                  <div className={`p-3 rounded-lg ${feature.color}`}>
+                    <feature.icon className="h-6 w-6" />
+                  </div>
+                </CardItem>
+                
+                <CardItem
+                  translateZ="60"
+                  className="text-xl font-bold text-neutral-600 dark:text-white"
+                >
+                  {feature.title}
+                </CardItem>
+                
+                <CardItem
+                  as="p"
+                  translateZ="40"
+                  className="text-neutral-500 text-sm max-w-sm mt-2 dark:text-neutral-300"
+                >
                   {feature.description}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </CardItem>
 
-        {/* Bottom CTA */}
-        <div className="text-center pt-16">
-          <Card className="max-w-2xl mx-auto p-8">
-            <CardContent className="space-y-6 p-0">
-              <div className="space-y-4">
-                <h3 className="text-2xl font-bold">Ready to Secure Your Code?</h3>
-                <p className="text-muted-foreground">
-                  Join thousands of developers who trust ReVAMP to protect their applications. 
-                  Start scanning your repositories in under 60 seconds.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+                <CardItem translateZ="30" className="mt-4 flex items-center gap-2 text-xs text-zinc-500">
+                   <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                   <span>Enterprise Ready</span>
+                </CardItem>
+              </CardBody>
+            </CardContainer>
+          ))}
         </div>
       </div>
     </section>

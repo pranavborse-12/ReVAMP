@@ -1,15 +1,21 @@
-import { Header } from './Header';
-import { Hero } from './Hero';
-import { Features } from './Features';
-import { Footer } from './Footer';
+import { Header } from '../components/Header'; // or ./Header depending on folder structure
+import { Hero } from '../components/Hero';
+import { Features } from '../components/Features';
+import { Solutions } from '../components/Solutions'; // <-- Check this import
+import { Pricing } from '../components/Pricing';
+import { DocumentationPreview } from '../components/DocumentationPreview'; // <-- Check this import
+import { Footer } from '../components/Footer';
 
 export function LandingPage() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-black text-zinc-100">
       <Header />
       <main>
         <Hero />
         <Features />
+        <Solutions /> {/* Must be here */}
+        <Pricing />
+        <DocumentationPreview /> {/* Must be here */}
       </main>
       <Footer />
     </div>
