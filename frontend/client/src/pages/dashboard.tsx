@@ -132,7 +132,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-indigo-500/30 p-6 lg:p-8">
+    <div className="w-full h-full bg-black text-zinc-100 font-sans selection:bg-indigo-500/30 p-6 lg:p-8">
       {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
         <div>
