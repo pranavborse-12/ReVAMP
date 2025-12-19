@@ -1,204 +1,163 @@
 import {
-    BarChart3,
-    BookOpen,
-    Clock,
-    FileText,
-    GitBranch,
-    LogOut,
-    PanelLeft,
-    Search,
-    Settings,
-    Shield,
-    User
-} from "lucide-react"
-import { NavLink } from "react-router-dom"
-import { useAuth } from "../context/AuthProvider"
-import { cn } from "../lib/utils"
-import { Badge } from "./ui/badge"
-import { Button } from "./ui/button"
-import {
-    Sidebar,
-    SidebarContent,
-    SidebarFooter,
-    SidebarGroup,
-    SidebarGroupContent,
-    SidebarGroupLabel,
-    SidebarHeader,
-    SidebarMenu,
-    SidebarMenuButton,
-    SidebarMenuItem,
-    useSidebar,
-} from "./ui/sidebar"
+  BarChart3,
+  BookOpen,
+  Clock,
+  FileText,
+  GitBranch,
+  LogOut,
+  PanelLeft,
+  Search,
+  Settings,
+  Shield,
+  User,
+} from "lucide-react";
+import { NavLink } from "react-router-dom";
+import { useAuth } from "../context/AuthProvider";
+import { cn } from "../lib/utils";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { useSidebar } from "./ui/sidebar";
 
-// Navigation Configuration
 const dashboardItems = [
   { title: "Overview", url: "/dashboard", icon: BarChart3, badge: null },
-  { title: "Repositories", url: "/repositories", icon: GitBranch, badge: "12" },
-  { title: "Vulnerabilities", url: "/vulnerabilities", icon: Shield, badge: "24" },
+  { title: "Repositories", url: "/repositories", icon: GitBranch },
+  { title: "Vulnerabilities", url: "/vulnerabilities", icon: Shield},
   { title: "Security Reports", url: "/reports", icon: FileText, badge: null },
-]
+];
 
 const toolsItems = [
-  { title: "Code Scanner", url: "/scanner", icon: Search, badge: null },
-  { title: "Scan History", url: "/history", icon: Clock, badge: null },
-  { title: "Documentation", url: "/docs", icon: BookOpen, badge: null },
-  { title: "Settings", url: "/settings", icon: Settings, badge: null },
-]
+  { title: "Code Scanner", url: "/scanner", icon: Search },
+  { title: "Scan History", url: "/history", icon: Clock },
+  { title: "Documentation", url: "/docs", icon: BookOpen },
+  { title: "Settings", url: "/settings", icon: Settings },
+];
 
 export function AppSidebar() {
-  const { open, setOpen } = useSidebar()
-  const { logout, user } = useAuth()
-
-  const handleLogout = async () => {
-    try {
-      await logout()
-    } catch (error) {
-      console.error("Logout failed:", error)
-    }
-  }
+  const { open, setOpen } = useSidebar();
+  const { logout, user } = useAuth();
 
   return (
-    <>
-      {/* Floating Toggle Button (Visible when closed) */}
-      {!open && (
+    <aside
+      className={cn(
+        "fixed left-0 top-0 h-screen flex flex-col z-50",
+        "border-r border-zinc-800 bg-zinc-950 text-zinc-300",
+        "transition-all duration-300 ease-in-out",
+        open ? "w-64" : "w-16"
+      )}
+    >
+      <div className="group relative h-16 flex items-center justify-between px-4 border-b border-zinc-800/50 shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shrink-0">
+            <Shield className="h-5 w-5" />
+          </div>
+
+          {open && (
+            <div className="flex flex-col min-w-0 overflow-hidden">
+              <span className="font-bold text-sm text-zinc-100 truncate">ReVAMP</span>
+              <span className="text-[10px] text-zinc-500 truncate">
+                Security Platform
+              </span>
+            </div>
+          )}
+        </div>
+
         <Button
           variant="ghost"
           size="icon"
-          className="fixed left-3 top-3 z-50 h-9 w-9 rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-400 shadow-xl hover:bg-zinc-800 hover:text-zinc-100 transition-all"
-          onClick={() => setOpen(true)}
+          onClick={() => setOpen(!open)}
+          className={cn(
+            "h-7 w-7 shrink-0",
+            "text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800",
+            "transition-opacity duration-200",
+            open ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          )}
         >
           <PanelLeft className="h-4 w-4" />
         </Button>
-      )}
+      </div>
 
-      <Sidebar className="border-r border-zinc-800 bg-zinc-950 text-zinc-300">
-        {/* Header / Brand */}
-        <SidebarHeader className="h-16 flex items-center justify-between px-4 border-b border-zinc-800/50">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shadow-lg shadow-blue-900/20">
-              <Shield className="h-5 w-5" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-bold text-sm tracking-tight text-zinc-100">ReVAMP</span>
-              <span className="text-[10px] text-zinc-500 font-medium">Security Platform</span>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
-            onClick={() => setOpen(false)}
-          >
-            <PanelLeft className="h-4 w-4" />
-          </Button>
-        </SidebarHeader>
-
-        <SidebarContent className="px-2 py-4">
-          {/* Main Navigation */}
-          <SidebarGroup>
-            <SidebarGroupLabel className="px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-4">
+        <div className="mb-6">
+          {open && (
+            <div className="px-2 mb-2 text-[10px] uppercase text-zinc-500 font-semibold tracking-wider">
               Platform
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {dashboardItems.map((item) => (
-                  <SidebarMenuItem key={item.title} className="mb-1">
-                    <SidebarMenuButton asChild>
-                      <NavLink 
-                        to={item.url} 
-                        className={({ isActive }) => cn(
-                          "group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
-                          isActive 
-                            ? "bg-zinc-800 text-white shadow-sm" 
-                            : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
-                        )}
-                      >
-                        {({ isActive }) => (
-                          <>
-                            <div className="flex items-center gap-3">
-                              <item.icon className={cn("h-4 w-4 transition-colors", isActive ? "text-blue-500" : "text-zinc-500 group-hover:text-zinc-300")} />
-                              <span>{item.title}</span>
-                            </div>
-                            {item.badge && (
-                              <Badge 
-                                className={cn(
-                                  "h-5 px-1.5 text-[10px] border-none shadow-none",
-                                  isActive ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400"
-                                )}
-                              >
-                                {item.badge}
-                              </Badge>
-                            )}
-                          </>
-                        )}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+            </div>
+          )}
+          <nav className="space-y-1">
+            {dashboardItems.map((item) => (
+              <NavLink
+                key={item.title}
+                to={item.url}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
+                    isActive
+                      ? "bg-zinc-800 text-white"
+                      : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200",
+                    !open && "justify-center"
+                  )
+                }
+              >
+                <item.icon className="h-4 w-4 shrink-0" />
+                {open && <span className="truncate">{item.title}</span>}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
 
-          {/* Tools Section */}
-          <SidebarGroup className="mt-6">
-            <SidebarGroupLabel className="px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">
+        <div>
+          {open && (
+            <div className="px-2 mb-2 text-[10px] uppercase text-zinc-500 font-semibold tracking-wider">
               Tools & Config
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {toolsItems.map((item) => (
-                  <SidebarMenuItem key={item.title} className="mb-1">
-                    <SidebarMenuButton asChild>
-                      <NavLink 
-                        to={item.url} 
-                        className={({ isActive }) => cn(
-                          "group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
-                          isActive 
-                            ? "bg-zinc-800 text-white shadow-sm" 
-                            : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
-                        )}
-                      >
-                         {({ isActive }) => (
-                          <div className="flex items-center gap-3">
-                            <item.icon className={cn("h-4 w-4 transition-colors", isActive ? "text-blue-500" : "text-zinc-500 group-hover:text-zinc-300")} />
-                            <span>{item.title}</span>
-                          </div>
-                        )}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
+            </div>
+          )}
+          <nav className="space-y-1">
+            {toolsItems.map((item) => (
+              <NavLink
+                key={item.title}
+                to={item.url}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
+                    isActive
+                      ? "bg-zinc-800 text-white"
+                      : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200",
+                    !open && "justify-center"
+                  )
+                }
+              >
+                <item.icon className="h-4 w-4 shrink-0" />
+                {open && <span className="truncate">{item.title}</span>}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+      </div>
 
-        {/* Footer / User Profile */}
-        <SidebarFooter className="p-4 border-t border-zinc-800/50 bg-zinc-900/20">
-          <div className="flex items-center gap-3 mb-4 px-1">
-            <div className="h-8 w-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-400">
+      <div className="border-t border-zinc-800/50 p-4 shrink-0">
+        {open && (
+          <div className="mb-3 flex items-center gap-3">
+            <div className="h-8 w-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
               <User className="h-4 w-4" />
             </div>
-            <div className="flex flex-col min-w-0">
-              <span className="text-sm font-medium text-zinc-200 truncate">
-                {user?.email?.split('@')[0] || "Guest User"}
-              </span>
-              <span className="text-[10px] text-zinc-500 truncate">
-                {user?.email || "Not connected"}
-              </span>
+            <div className="text-sm truncate text-zinc-300 min-w-0">
+              {user?.email || "Guest"}
             </div>
           </div>
-          
-          <Button
-            variant="outline"
-            className="w-full justify-start gap-2 border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:bg-red-950/30 hover:text-red-400 hover:border-red-900/50 transition-all h-9 text-xs"
-            onClick={handleLogout}
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            <span>Sign Out</span>
-          </Button>
-        </SidebarFooter>
-      </Sidebar>
-    </>
-  )
+        )}
+
+        <Button
+          variant="outline"
+          className={cn(
+            "w-full gap-2 text-zinc-400 hover:text-red-400 hover:border-red-900",
+            !open && "justify-center px-0"
+          )}
+          onClick={logout}
+        >
+          <LogOut className="h-4 w-4" />
+          {open && "Sign Out"}
+        </Button>
+      </div>
+    </aside>
+  );
 }
