@@ -28,6 +28,26 @@ const Icons = {
   ),
   File: () => (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+  ),
+  Sparkles: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+    </svg>
+  ),
+  Check: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  ),
+  Code: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+    </svg>
+  ),
+  ArrowRight: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+    </svg>
   )
 };
 
@@ -55,6 +75,30 @@ interface ScanResult {
 }
 interface ScanStatus {
   scan_id: string; status: string; message: string; progress: string; repo_name?: string;
+}
+interface AIFixRequest {
+  vulnerability: Vulnerability;
+  repo_owner: string;
+  repo_name: string;
+  file_path: string;
+}
+
+interface AIFixResult {
+  success: boolean;
+  vulnerability_analysis: string;
+  code_analysis: string;
+  fix_explanation: string;
+  original_code: string;
+  fixed_code: string;
+  changes_made: string[];
+  security_improvement: string;
+}
+
+interface AIFixState {
+  isOpen: boolean;
+  isLoading: boolean;
+  result: AIFixResult | null;
+  error: string | null;
 }
 
 // --- UTILS ---
@@ -120,6 +164,7 @@ function Toasts({ toasts, removeToast }: { toasts: Toast[]; removeToast: (id: nu
 function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: () => void }) {
   const [selectedVuln, setSelectedVuln] = useState<Vulnerability | null>(null);
   const [filterSev, setFilterSev] = useState<string | null>(null);
+  const [fixingVuln, setFixingVuln] = useState<Vulnerability | null>(null);
 
   // Default to first vuln if exists
   useEffect(() => {
@@ -146,7 +191,7 @@ function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: ()
             <h2 className="text-lg font-bold leading-none">{result.repo_name}</h2>
             <div className="flex items-center gap-2 text-xs text-zinc-400 mt-1">
               <span>{result.total_issues} issues detected</span>
-              <span>•</span>
+              <span>â€¢</span>
               <span>{result.scan_duration?.toFixed(2)}s scan time</span>
             </div>
           </div>
@@ -225,6 +270,16 @@ function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: ()
         <div className="flex-1 bg-zinc-950 overflow-y-auto relative hidden md:block">
           {selectedVuln ? (
             <div className="p-8 max-w-4xl mx-auto">
+              <div className="mb-6 flex justify-end">
+                <button
+                onClick={() => setFixingVuln(selectedVuln)}
+                className="group px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-lg font-medium transition-all shadow-lg hover:shadow-xl flex items-center gap-2 ring-2 ring-blue-500/20 hover:ring-blue-400/30"
+                >
+                  <Icons.Sparkles />
+                  <span>Fix with AI</span>
+                  <Icons.ArrowRight />
+                  </button>
+                </div>
               <div className="mb-6 pb-6 border-b border-zinc-800">
                 <div className="flex items-center gap-3 mb-4">
                   <SeverityBadge severity={selectedVuln.severity} />
@@ -283,9 +338,243 @@ function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: ()
           )}
         </div>
       </div>
+      {fixingVuln && (
+        <AIFixModal
+        vulnerability={fixingVuln}
+        repoOwner={result.repo_owner}
+        repoName={result.repo_name}
+        onClose={() => setFixingVuln(null)}
+        />
+        )}
     </div>
   );
 }
+// AI Vulnerability fixes
+function AIFixModal({ 
+  vulnerability, 
+  repoOwner, 
+  repoName, 
+  onClose 
+}: { 
+  vulnerability: Vulnerability; 
+  repoOwner: string; 
+  repoName: string; 
+  onClose: () => void;
+}) {
+  const [state, setState] = useState<AIFixState>({
+    isOpen: true,
+    isLoading: true,
+    result: null,
+    error: null
+  });
+
+  useEffect(() => {
+    const fetchFix = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/ai/fix-vulnerability`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            vulnerability,
+            repo_owner: repoOwner,
+            repo_name: repoName,
+            file_path: vulnerability.location.file
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to generate fix");
+        }
+
+        const result = await response.json();
+        setState(prev => ({ ...prev, isLoading: false, result }));
+      } catch (error: any) {
+        setState(prev => ({ 
+          ...prev, 
+          isLoading: false, 
+          error: error.message || "Failed to generate AI fix" 
+        }));
+      }
+    };
+
+    fetchFix();
+  }, [vulnerability, repoOwner, repoName]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-6xl max-h-[90vh] overflow-hidden shadow-2xl">
+        {/* Header */}
+        <div className="border-b border-zinc-800 p-6 bg-gradient-to-r from-blue-950/30 to-purple-950/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg shadow-lg">
+                <Icons.Sparkles />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
+                  AI-Powered Security Fix
+                </h2>
+                <p className="text-sm text-zinc-400 mt-0.5">
+                  {vulnerability.vulnerability_type} â€¢ {vulnerability.location.file}
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={onClose}
+              className="p-2 hover:bg-zinc-800 rounded-full transition-colors text-zinc-400 hover:text-white"
+            >
+              <Icons.Close />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="overflow-y-auto max-h-[calc(90vh-100px)]">
+          {state.isLoading ? (
+            <div className="flex flex-col items-center justify-center py-20 px-6">
+              <div className="relative mb-6">
+                <div className="w-20 h-20 rounded-full border-4 border-zinc-800 border-t-blue-500 animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Icons.Sparkles />
+                </div>
+              </div>
+              <h3 className="text-lg font-semibold text-zinc-200 mb-2">Analyzing Vulnerability...</h3>
+              <p className="text-zinc-500 text-sm text-center max-w-md">
+                Our AI is analyzing the code, understanding the context, and generating a secure fix for you.
+              </p>
+              <div className="mt-8 space-y-2 w-full max-w-md">
+                {["Reading repository code...", "Analyzing vulnerability context...", "Generating secure fix...", "Validating changes..."].map((step, idx) => (
+                  <div key={idx} className="flex items-center gap-3 text-sm text-zinc-400">
+                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" style={{ animationDelay: `${idx * 200}ms` }}></div>
+                    {step}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : state.error ? (
+            <div className="p-8 text-center">
+              <div className="w-16 h-16 bg-red-950/30 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500">
+                <Icons.Close />
+              </div>
+              <h3 className="text-lg font-semibold text-red-400 mb-2">Fix Generation Failed</h3>
+              <p className="text-zinc-400 text-sm">{state.error}</p>
+            </div>
+          ) : state.result ? (
+            <div className="p-6 space-y-6">
+              {/* Success Banner */}
+              <div className="bg-gradient-to-r from-emerald-950/30 to-emerald-900/20 border border-emerald-800/30 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400">
+                    <Icons.Check />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-emerald-400 mb-1">Security Fix Generated Successfully</h3>
+                    <p className="text-sm text-zinc-300">{state.result.security_improvement}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Vulnerability Analysis */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+                  <Icons.Shield />
+                  Vulnerability Analysis
+                </h3>
+                <div className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-4">
+                  <p className="text-zinc-300 leading-relaxed text-sm">{state.result.vulnerability_analysis}</p>
+                </div>
+              </div>
+
+              {/* Code Analysis */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+                  <Icons.Code />
+                  Code Context Analysis
+                </h3>
+                <div className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-4">
+                  <p className="text-zinc-300 leading-relaxed text-sm">{state.result.code_analysis}</p>
+                </div>
+              </div>
+
+              {/* Changes Made */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Changes Applied</h3>
+                <div className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-4">
+                  <ul className="space-y-2">
+                    {state.result.changes_made.map((change, idx) => (
+                      <li key={idx} className="flex items-start gap-2 text-sm text-zinc-300">
+                        <span className="text-emerald-400 mt-0.5">âœ“</span>
+                        <span>{change}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Code Comparison */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Code Diff</h3>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Original Code */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between px-3 py-2 bg-red-950/20 border border-red-900/30 rounded-t-lg">
+                      <span className="text-xs font-semibold text-red-400 uppercase tracking-wider">Original (Vulnerable)</span>
+                    </div>
+                    <pre className="bg-zinc-950 border border-zinc-800 rounded-b-lg p-4 overflow-x-auto text-xs font-mono text-zinc-300 leading-relaxed max-h-96">
+                      {state.result.original_code}
+                    </pre>
+                  </div>
+
+                  {/* Fixed Code */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between px-3 py-2 bg-emerald-950/20 border border-emerald-900/30 rounded-t-lg">
+                      <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Fixed (Secure)</span>
+                    </div>
+                    <pre className="bg-zinc-950 border border-zinc-800 rounded-b-lg p-4 overflow-x-auto text-xs font-mono text-zinc-300 leading-relaxed max-h-96">
+                      {state.result.fixed_code}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fix Explanation */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+                  <Icons.Sparkles />
+                  How This Fix Works
+                </h3>
+                <div className="bg-gradient-to-br from-blue-950/20 to-purple-950/20 border border-blue-900/30 rounded-lg p-4">
+                  <p className="text-zinc-300 leading-relaxed text-sm whitespace-pre-wrap">{state.result.fix_explanation}</p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 border-t border-zinc-800">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(state.result!.fixed_code);
+                  }}
+                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                  <Icons.Code />
+                  Copy Fixed Code
+                </button>
+                <button
+                  onClick={onClose}
+                  className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg font-medium transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 // --- SCAN PROGRESS ---
 function ScanProgress({ scanId, repoName, onComplete }: { scanId: string; repoName: string; onComplete: (result: ScanResult) => void; }) {
