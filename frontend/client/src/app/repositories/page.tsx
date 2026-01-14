@@ -273,11 +273,16 @@ function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: ()
               <div className="mb-6 flex justify-end">
                 <button
                 onClick={() => setFixingVuln(selectedVuln)}
-                className="group px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-lg font-medium transition-all shadow-lg hover:shadow-xl flex items-center gap-2 ring-2 ring-blue-500/20 hover:ring-blue-400/30"
+                className="group relative px-6 py-3 bg-zinc-100 hover:bg-white text-zinc-950 rounded-xl font-bold transition-all duration-300 shadow-[0_0_20px_rgba(59,130,246,0.5)] hover:shadow-[0_0_30px_rgba(59,130,246,0.8)] flex items-center gap-3 overflow-hidden"
                 >
+                  <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]" />
+                  <div className="relative flex items-center gap-2"></div>    
                   <Icons.Sparkles />
-                  <span>Fix with AI</span>
+                  <span className="tracking-tight">Auto-Fix with AI</span>
                   <Icons.ArrowRight />
+                  <div className="relative flex items-center justify-center w-6 h-6 bg-zinc-900 rounded-lg group-hover:translate-x-1 transition-transform duration-300">
+                    <Icons.ArrowRight />
+                    </div>
                   </button>
                 </div>
               <div className="mb-6 pb-6 border-b border-zinc-800">
@@ -402,172 +407,95 @@ function AIFixModal({
   }, [vulnerability, repoOwner, repoName]);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-6xl max-h-[90vh] overflow-hidden shadow-2xl">
-        {/* Header */}
-        <div className="border-b border-zinc-800 p-6 bg-gradient-to-r from-blue-950/30 to-purple-950/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg shadow-lg">
-                <Icons.Sparkles />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
-                  AI-Powered Security Fix
-                </h2>
-                <p className="text-sm text-zinc-400 mt-0.5">
-                  {vulnerability.vulnerability_type} â€¢ {vulnerability.location.file}
-                </p>
-              </div>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 lg:p-12">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-7xl h-full max-h-[850px] overflow-hidden shadow-2xl flex flex-col">
+        
+        {/* Header - Minimal & Clean */}
+        <div className="border-b border-zinc-800 p-5 flex items-center justify-between bg-zinc-900">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-400 border border-blue-500/20">
+              <Icons.Sparkles />
             </div>
-            <button 
-              onClick={onClose}
-              className="p-2 hover:bg-zinc-800 rounded-full transition-colors text-zinc-400 hover:text-white"
-            >
-              <Icons.Close />
-            </button>
+            <div>
+              <h2 className="text-sm font-bold text-zinc-100 uppercase tracking-widest">AI Security Engineer</h2>
+              <p className="text-xs text-zinc-500 font-mono">Patching: {vulnerability.location.file}</p>
+            </div>
           </div>
+          <button onClick={onClose} className="p-2 hover:bg-zinc-800 rounded-full transition-colors text-zinc-500"><Icons.Close /></button>
         </div>
 
-        {/* Content */}
-        <div className="overflow-y-auto max-h-[calc(90vh-100px)]">
+        <div className="flex-1 flex overflow-hidden">
           {state.isLoading ? (
-            <div className="flex flex-col items-center justify-center py-20 px-6">
-              <div className="relative mb-6">
-                <div className="w-20 h-20 rounded-full border-4 border-zinc-800 border-t-blue-500 animate-spin"></div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <Icons.Sparkles />
-                </div>
-              </div>
-              <h3 className="text-lg font-semibold text-zinc-200 mb-2">Analyzing Vulnerability...</h3>
-              <p className="text-zinc-500 text-sm text-center max-w-md">
-                Our AI is analyzing the code, understanding the context, and generating a secure fix for you.
-              </p>
-              <div className="mt-8 space-y-2 w-full max-w-md">
-                {["Reading repository code...", "Analyzing vulnerability context...", "Generating secure fix...", "Validating changes..."].map((step, idx) => (
-                  <div key={idx} className="flex items-center gap-3 text-sm text-zinc-400">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" style={{ animationDelay: `${idx * 200}ms` }}></div>
-                    {step}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : state.error ? (
-            <div className="p-8 text-center">
-              <div className="w-16 h-16 bg-red-950/30 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500">
-                <Icons.Close />
-              </div>
-              <h3 className="text-lg font-semibold text-red-400 mb-2">Fix Generation Failed</h3>
-              <p className="text-zinc-400 text-sm">{state.error}</p>
-            </div>
+             <div className="flex-1 flex flex-col items-center justify-center space-y-4">
+                <div className="w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-zinc-400 font-mono text-sm animate-pulse">Generating secure patch...</p>
+             </div>
           ) : state.result ? (
-            <div className="p-6 space-y-6">
-              {/* Success Banner */}
-              <div className="bg-gradient-to-r from-emerald-950/30 to-emerald-900/20 border border-emerald-800/30 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400">
-                    <Icons.Check />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-emerald-400 mb-1">Security Fix Generated Successfully</h3>
-                    <p className="text-sm text-zinc-300">{state.result.security_improvement}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Vulnerability Analysis */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
-                  <Icons.Shield />
-                  Vulnerability Analysis
-                </h3>
-                <div className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-4">
-                  <p className="text-zinc-300 leading-relaxed text-sm">{state.result.vulnerability_analysis}</p>
-                </div>
-              </div>
-
-              {/* Code Analysis */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
-                  <Icons.Code />
-                  Code Context Analysis
-                </h3>
-                <div className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-4">
-                  <p className="text-zinc-300 leading-relaxed text-sm">{state.result.code_analysis}</p>
-                </div>
-              </div>
-
-              {/* Changes Made */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Changes Applied</h3>
-                <div className="bg-zinc-950/50 border border-zinc-800 rounded-lg p-4">
-                  <ul className="space-y-2">
-                    {state.result.changes_made.map((change, idx) => (
-                      <li key={idx} className="flex items-start gap-2 text-sm text-zinc-300">
-                        <span className="text-emerald-400 mt-0.5">âœ“</span>
-                        <span>{change}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Code Comparison */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Code Diff</h3>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {/* Original Code */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between px-3 py-2 bg-red-950/20 border border-red-900/30 rounded-t-lg">
-                      <span className="text-xs font-semibold text-red-400 uppercase tracking-wider">Original (Vulnerable)</span>
+            <>
+              {/* Left Panel: The Explanation (The "Chat") */}
+              <div className="w-full lg:w-[400px] border-r border-zinc-800 flex flex-col bg-zinc-950/50">
+                <div className="p-6 overflow-y-auto space-y-8">
+                  
+                  {/* Insight Section */}
+                  <section>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-3">Vulnerability Analysis</label>
+                    <div className="text-sm text-zinc-300 leading-relaxed bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
+                      {state.result.vulnerability_analysis}
                     </div>
-                    <pre className="bg-zinc-950 border border-zinc-800 rounded-b-lg p-4 overflow-x-auto text-xs font-mono text-zinc-300 leading-relaxed max-h-96">
-                      {state.result.original_code}
-                    </pre>
-                  </div>
+                  </section>
 
-                  {/* Fixed Code */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between px-3 py-2 bg-emerald-950/20 border border-emerald-900/30 rounded-t-lg">
-                      <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Fixed (Secure)</span>
+                  {/* Fix Logic Section */}
+                  <section>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-3">Proposed Solution</label>
+                    <div className="space-y-3">
+                      {state.result.changes_made.map((change, i) => (
+                        <div key={i} className="flex gap-3 text-xs text-zinc-400">
+                          <div className="mt-1 text-emerald-500"><Icons.Check /></div>
+                          <span>{change}</span>
+                        </div>
+                      ))}
                     </div>
-                    <pre className="bg-zinc-950 border border-zinc-800 rounded-b-lg p-4 overflow-x-auto text-xs font-mono text-zinc-300 leading-relaxed max-h-96">
-                      {state.result.fixed_code}
-                    </pre>
+                  </section>
+
+                  <div className="bg-blue-500/5 border border-blue-500/10 p-4 rounded-xl">
+                    <p className="text-xs text-blue-400 leading-relaxed italic">
+                      "I've updated the logic to sanitize inputs and prevent potential {vulnerability.vulnerability_type} escalations."
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
+                  <button 
+                    onClick={() => navigator.clipboard.writeText(state.result!.fixed_code)}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2"
+                  >
+                    <Icons.Code /> Copy Fixed Code
+                  </button>
+                </div>
+              </div>
+
+              {/* Right Panel: The Code (Interactive Diff) */}
+              <div className="hidden lg:flex flex-1 flex-col bg-zinc-950">
+                <div className="flex-1 overflow-hidden flex flex-col">
+                  {/* Code Header */}
+                  <div className="flex border-b border-zinc-900">
+                    <div className="px-6 py-3 border-r border-zinc-800 bg-zinc-900 text-xs font-mono text-zinc-300">Comparison View</div>
+                  </div>
+                  
+                  {/* Code Content */}
+                  <div className="flex-1 overflow-y-auto grid grid-cols-2">
+                    <div className="border-r border-zinc-900">
+                      <div className="p-3 bg-red-500/10 text-red-500 text-[10px] font-bold uppercase sticky top-0">Vulnerable Code</div>
+                      <pre className="p-6 text-[11px] font-mono text-zinc-500 whitespace-pre-wrap">{state.result.original_code}</pre>
+                    </div>
+                    <div>
+                      <div className="p-3 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase sticky top-0">AI Secure Fix</div>
+                      <pre className="p-6 text-[11px] font-mono text-zinc-200 whitespace-pre-wrap">{state.result.fixed_code}</pre>
+                    </div>
                   </div>
                 </div>
               </div>
-
-              {/* Fix Explanation */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
-                  <Icons.Sparkles />
-                  How This Fix Works
-                </h3>
-                <div className="bg-gradient-to-br from-blue-950/20 to-purple-950/20 border border-blue-900/30 rounded-lg p-4">
-                  <p className="text-zinc-300 leading-relaxed text-sm whitespace-pre-wrap">{state.result.fix_explanation}</p>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4 border-t border-zinc-800">
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(state.result!.fixed_code);
-                  }}
-                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-                >
-                  <Icons.Code />
-                  Copy Fixed Code
-                </button>
-                <button
-                  onClick={onClose}
-                  className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg font-medium transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
+            </>
           ) : null}
         </div>
       </div>
@@ -725,6 +653,13 @@ export default function RepositoriesPage() {
   const [activeScanId, setActiveScanId] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
+  const filteredRepos = useMemo(() => {
+    return repos.filter(repo =>
+      repo.name.toLowerCase().includes(query.toLowerCase()) ||
+      (repo.description && repo.description.toLowerCase().includes(query.toLowerCase()))
+    );
+  }, [repos, query]);
+
   const addToast = (message: string, type: "success" | "error" | "info" = "info") => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, message, type }]);
@@ -743,7 +678,9 @@ export default function RepositoriesPage() {
         const rRes = await fetch(`${API_BASE_URL}/api/github/repos?sort=updated&per_page=50`, { credentials: "include" });
         if (!rRes.ok) throw new Error("Failed to load repositories");
         const rData = await rRes.json();
-        setRepos(rData);
+        // Ensure rData is an array (handle both direct array and nested data responses)
+        const reposArray = Array.isArray(rData) ? rData : (rData.repositories || []);
+        setRepos(reposArray);
       } catch (err) {
         setError("Failed to load data");
       } finally {
@@ -752,42 +689,77 @@ export default function RepositoriesPage() {
     };
     init();
   }, []);
-
+  
   const handleScanStart = async (repo: Repo) => {
     try {
       const owner = repo.owner?.login || repo.full_name?.split("/")[0] || "";
-      const res = await fetch(`${API_BASE_URL}/api/scanning/repos/${owner}/${repo.name}/scan?branch=main`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include"
-      });
-      if (!res.ok) throw new Error("Failed to start scan");
-      const data = await res.json();
-      setActiveScanId(data.scan_id);
-    } catch (err) {
-      addToast("Failed to initiate scan", "error");
+      const eligibilityRes = await fetch(
+        `${API_BASE_URL}/api/scanning/repos/${owner}/${repo.name}/check-eligibility?branch=main`,
+        { method: "POST", credentials: "include" }
+      );
+      if (!eligibilityRes.ok) {
+      const errorText = await eligibilityRes.text();
+      addToast(`Failed to check eligibility: ${errorText}`, "error");
+      return;
     }
-  };
-
-  // Filter Repos
-  const filteredRepos = repos.filter(r => r.name.toLowerCase().includes(query.toLowerCase()));
-
-  // --- RENDERING ---
-
-  if (activeScanId && !scanResult) {
-    const repoName = repos.find(r => r.id.toString() === activeScanId)?.name || "Repository";
-    return <ScanProgress scanId={activeScanId} repoName={repoName} onComplete={(res) => {
-      setScanResult(res);
-      addToast(`Scan completed for ${res.repo_name}`, "success");
-    }} />;
+    const eligibility = await eligibilityRes.json();
+    
+    // ✅ FIXED: Validate response structure
+    if (!eligibility || typeof eligibility.eligible === 'undefined') {
+      console.error("Invalid eligibility response:", eligibility);
+      addToast("Received invalid response from server. Starting scan anyway...", "info");
+      // Continue with scan anyway
+    } else if (!eligibility.eligible) {
+      // Step 2: Show appropriate messages for ineligible repos
+      const shouldForce = window.confirm(
+        `⚠️ ${eligibility.reason}\n\n` +
+        `Last scanned: ${eligibility.last_scanned_commit || 'Never'}\n` +
+        `Latest commit: ${eligibility.latest_commit}\n` +
+        `Message: ${eligibility.commit_message || 'No message'}\n\n` +
+        `Do you want to force scan anyway?`
+      );
+      
+      if (!shouldForce) {
+        addToast("Scan cancelled - no new commits detected", "info");
+        return;
+      }
+    } else if (eligibility.has_new_commits) {
+      addToast(
+        `✅ ${eligibility.new_commits_count} new commit(s) detected! Starting scan...`,
+        "success"
+      );
+    } else if (!eligibility.is_first_scan) {
+      addToast(
+        `⚠️ No new commits. ${eligibility.remaining_scans} rescan(s) remaining.`,
+        "info"
+      );
+    }
+    
+    // Step 3: Initiate scan
+    const shouldForce = eligibility && !eligibility.eligible;
+    const scanUrl = shouldForce
+      ? `${API_BASE_URL}/api/scanning/repos/${owner}/${repo.name}/scan?branch=main&force=true`
+      : `${API_BASE_URL}/api/scanning/repos/${owner}/${repo.name}/scan?branch=main`;
+    
+    const res = await fetch(scanUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include"
+    });
+    
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.detail || "Failed to start scan");
+    }
+    
+    const data = await res.json();
+    setActiveScanId(data.scan_id);
+    
+  } catch (err: any) {
+    console.error("Scan start error:", err);
+    addToast(err.message || "Failed to initiate scan", "error");
   }
-
-  if (scanResult) {
-    return (
-      <>
-        <ScanResultsModal result={scanResult} onClose={() => { setScanResult(null); setActiveScanId(null); }} />
-        <Toasts toasts={toasts} removeToast={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
-      </>
-    );
-  }
+};
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-blue-500/30">

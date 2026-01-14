@@ -1,471 +1,445 @@
 """
-GitHub Repository Management Backend
-Handles fetching repositories, files, and repository contents with proper authentication
-Updated to work with PostgreSQL database instead of in-memory store
+GitHub Repository Routes with Database Integration
+FIXED: Proper JWT user_id extraction and repository storage
 """
-
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Request, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
-from typing import List, Dict, Any, Optional
 import logging
-from datetime import datetime, timedelta
+from typing import Optional, List
+import uuid as uuid_module
 import asyncio
-from functools import lru_cache
 
-# Database imports
-from backend.database.config import get_db
-from backend.database.service import DatabaseService
-
-# Import from authentication module (removed 'store')
-from backend.auth.authentication import get_current_user, Config, JWTManager
+# Import database storage
+from backend.scanning_repos.storage import save_repository_to_db, get_user_repositories_from_db
 
 logger = logging.getLogger(__name__)
 
-# Create router WITHOUT prefix (prefix will be added in main.py)
-router = APIRouter(tags=["github-repos"])
-
-GITHUB_API_URL = "https://api.github.com"
-GITHUB_API_TIMEOUT = 30.0
-
-# Simple in-memory cache for repository data
-repo_cache: Dict[str, Dict[str, Any]] = {}
-CACHE_DURATION = timedelta(minutes=5)
+router = APIRouter()
 
 
-class GitHubAPIError(Exception):
-    """Custom exception for GitHub API errors"""
-    def __init__(self, status_code: int, message: str, details: Optional[str] = None):
-        self.status_code = status_code
-        self.message = message
-        self.details = details
-        super().__init__(self.message)
-
-
-async def get_github_token(
-    request: Request,
-    db: AsyncSession = Depends(get_db)
-) -> Optional[str]:
-    """
-    Extract GitHub access token from various sources
-    Updated to use database instead of store
-    """
-    # Try cookie first
+async def get_github_token(request: Request) -> str:
+    """Extract GitHub token from request"""
+    # Try cookie first (most reliable for same-origin requests)
     github_token = request.cookies.get("github_access_token")
+    
     if github_token:
-        logger.info("Found GitHub token in cookie")
+        logger.debug(f"GitHub token found in cookies")
         return github_token
-        
-    # Try JWT payload
+    
+    # Try Authorization header (Bearer token)
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
-        try:
-            token = auth_header.split(" ")[1]
-            payload = await JWTManager.verify_token(db, token)
-            if payload and "github_token" in payload:
-                logger.info("Found GitHub token in JWT")
-                return payload["github_token"]
-        except Exception as e:
-            logger.error(f"Error extracting GitHub token from JWT: {e}")
+        github_token = auth_header.replace("Bearer ", "")
+        logger.debug(f"GitHub token found in Authorization header")
+        return github_token
     
-    # Try access_token cookie (JWT)
-    access_token = request.cookies.get("access_token")
-    if access_token:
-        try:
-            payload = await JWTManager.verify_token(db, access_token)
-            if payload and "github_token" in payload:
-                logger.info("Found GitHub token in access_token cookie")
-                return payload["github_token"]
-        except Exception as e:
-            logger.error(f"Error extracting GitHub token from access_token cookie: {e}")
-    
-    logger.warning("No GitHub token found in request")
-    return None
-
-
-async def make_github_request(
-    endpoint: str,
-    github_token: str,
-    params: Optional[Dict[str, Any]] = None,
-    method: str = "GET",
-    timeout: float = GITHUB_API_TIMEOUT
-) -> Dict[str, Any]:
-    """
-    Make authenticated request to GitHub API with proper error handling
-    """
-    headers = {
-        "Authorization": f"Bearer {github_token}",
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "ReVAMP-SecureScan/2.0",
-        "X-GitHub-Api-Version": "2022-11-28"
-    }
-    
-    url = f"{GITHUB_API_URL}{endpoint}"
-    
+    # Try to extract from JWT payload if available
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            if method == "GET":
-                response = await client.get(url, headers=headers, params=params or {})
-            elif method == "POST":
-                response = await client.post(url, headers=headers, json=params or {})
-            else:
-                raise ValueError(f"Unsupported HTTP method: {method}")
-            
-            # Handle rate limiting
-            if response.status_code == 403:
-                rate_limit_remaining = response.headers.get("X-RateLimit-Remaining", "0")
-                if rate_limit_remaining == "0":
-                    reset_time = response.headers.get("X-RateLimit-Reset", "")
-                    raise GitHubAPIError(
-                        403,
-                        "GitHub API rate limit exceeded",
-                        f"Rate limit resets at: {reset_time}"
-                    )
-            
-            # Handle other errors
-            if response.status_code == 401:
-                raise GitHubAPIError(401, "GitHub authentication failed", "Invalid or expired token")
-            
-            if response.status_code == 404:
-                raise GitHubAPIError(404, "Resource not found", "The requested resource does not exist")
-            
-            if response.status_code >= 400:
-                error_detail = response.json().get("message", "Unknown error") if response.text else "Unknown error"
-                raise GitHubAPIError(
-                    response.status_code,
-                    f"GitHub API error: {response.status_code}",
-                    error_detail
-                )
-            
-            return response.json()
-            
-    except httpx.TimeoutException:
-        logger.error(f"GitHub API timeout for endpoint: {endpoint}")
-        raise GitHubAPIError(504, "GitHub API request timed out", "Please try again later")
-    except httpx.RequestError as e:
-        logger.error(f"GitHub API request error: {e}")
-        raise GitHubAPIError(503, "Failed to connect to GitHub", str(e))
-    except GitHubAPIError:
-        raise
+        from backend.auth.authentication import JWTManager
+        
+        # Try multiple token sources
+        token = request.cookies.get("session_token") or request.cookies.get("access_token")
+        
+        if token:
+            payload = await JWTManager.verify_token(token)
+            if payload and payload.get("github_token"):
+                logger.debug(f"GitHub token found in JWT payload")
+                return payload["github_token"]
     except Exception as e:
-        logger.error(f"Unexpected error calling GitHub API: {e}")
-        raise GitHubAPIError(500, "Internal server error", str(e))
+        logger.debug(f"Could not extract GitHub token from JWT: {e}")
+    
+    # No token found - log what we have
+    logger.warning(f"GitHub token not found. Available cookies: {list(request.cookies.keys())}")
+    raise HTTPException(
+        status_code=401,
+        detail="GitHub authentication required. Please login with GitHub."
+    )
 
-
-def get_cache_key(prefix: str, *args) -> str:
-    """Generate cache key"""
-    return f"{prefix}:{':'.join(str(arg) for arg in args)}"
-
-
-def get_cached_data(cache_key: str) -> Optional[Dict[str, Any]]:
-    """Get data from cache if valid"""
-    if cache_key in repo_cache:
-        cached_entry = repo_cache[cache_key]
-        if datetime.utcnow() < cached_entry["expires_at"]:
-            return cached_entry["data"]
-        else:
-            del repo_cache[cache_key]
-    return None
-
-
-def set_cached_data(cache_key: str, data: Any, duration: timedelta = CACHE_DURATION):
-    """Store data in cache"""
-    repo_cache[cache_key] = {
-        "data": data,
-        "expires_at": datetime.utcnow() + duration,
-        "cached_at": datetime.utcnow()
-    }
-
-
-# ==================== API ENDPOINTS ====================
-
-@router.get("/profile")
-async def get_github_profile(
-    request: Request,
-    db: AsyncSession = Depends(get_db)  # Added database dependency
-):
-    """Get GitHub user profile"""
+async def get_user_id(request: Request) -> str:
+    """
+    Extract user ID from JWT token with proper fallback handling
+    """
+    from backend.auth.authentication import JWTManager
+    
+    # Try to get token from multiple sources
+    token = None
+    
+    # 1. Try session_token cookie (most reliable)
+    token = request.cookies.get("session_token")
+    
+    # 2. Try access_token cookie
+    if not token:
+        token = request.cookies.get("access_token")
+    
+    # 3. Try Authorization header
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1]
+    
+    if not token:
+        logger.warning("No JWT token found in request")
+        return "anonymous"
+    
+    # Verify and decode token
     try:
-        github_token = await get_github_token(request, db)  # Pass db
-        if not github_token:
-            logger.error("No GitHub token found")
-            raise HTTPException(
-                status_code=401,
-                detail="GitHub token not found. Please reconnect your GitHub account."
-            )
-
-        logger.info("Fetching GitHub profile...")
-        profile = await make_github_request("/user", github_token)
+        payload = await JWTManager.verify_token(token)
         
-        logger.info(f"GitHub profile fetched successfully: {profile.get('login')}")
+        if not payload:
+            logger.warning("JWT token verification failed")
+            return "anonymous"
         
-        return {
-            "login": profile.get("login"),
-            "name": profile.get("name"),
-            "avatar_url": profile.get("avatar_url"),
-            "html_url": profile.get("html_url"),
-            "bio": profile.get("bio"),
-            "email": profile.get("email"),
-            "public_repos": profile.get("public_repos"),
-            "followers": profile.get("followers"),
-            "following": profile.get("following")
-        }
-
-    except GitHubAPIError as e:
-        logger.error(f"GitHub API error: {e.message}")
-        raise HTTPException(status_code=e.status_code, detail=e.message)
-    except HTTPException:
-        raise
+        # Try to extract user_id
+        user_id = None
+        
+        # 1. Try direct user_id field (from database)
+        if "user_id" in payload and payload["user_id"]:
+            user_id = payload["user_id"]
+        
+        # 2. Try sub field (email fallback)
+        elif "sub" in payload:
+            email = payload["sub"]
+            
+            # Try to get UUID from database
+            try:
+                from backend.database import config as db_config
+                from backend.database.service import DatabaseService
+                
+                if db_config.is_db_available() and db_config.AsyncSessionLocal:
+                    async with db_config.AsyncSessionLocal() as db:
+                        db_user = await DatabaseService.get_user_by_email(db, email)
+                        if db_user:
+                            user_id = str(db_user.id)
+            except Exception as e:
+                logger.warning(f"Could not fetch user from database: {e}")
+        
+        # 3. Validate UUID format
+        if user_id and user_id != "anonymous":
+            try:
+                uuid_module.UUID(user_id)
+                return user_id
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Invalid UUID format: {user_id} - {e}")
+        
+        return "anonymous"
+        
     except Exception as e:
-        logger.error(f"Unexpected error fetching GitHub profile: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error extracting user_id from JWT: {e}", exc_info=True)
+        return "anonymous"
+
+async def save_repos_in_background(repos_data: List[dict], user_id: str):
+    """
+    ✅ NEW: Save repositories to database in parallel (background task)
+    This runs AFTER the API response is sent to the client
+    """
+    if user_id == "anonymous":
+        logger.info("Skipping database save for anonymous user")
+        return
+    
+    logger.info(f"🔄 Background task: Saving {len(repos_data)} repositories...")
+    
+    # ✅ Save all repos in parallel using asyncio.gather
+    tasks = [
+        save_repository_to_db(
+            user_id=user_id,
+            owner=repo["owner"]["login"],
+            repo_name=repo["name"],
+            github_url=repo["html_url"],
+            default_branch=repo.get("default_branch", "main"),
+            primary_language=repo.get("language"),
+            is_private=repo.get("private", False)
+        )
+        for repo in repos_data
+    ]
+    
+    # Run all saves concurrently
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Count successes
+    saved_count = sum(1 for r in results if r and not isinstance(r, Exception))
+    failed_count = len(results) - saved_count
+    
+    logger.info(
+        f"✅ Background save complete: {saved_count} saved, {failed_count} failed"
+    )
 
 
 @router.get("/repos")
-async def get_user_repositories(
+async def get_user_repos(
     request: Request,
-    db: AsyncSession = Depends(get_db),  # Added database dependency
-    query: str = Query("", description="Search query for repositories"),
-    type: str = Query("all", description="Type of repositories (all, owner, member)"),
-    sort: str = Query("updated", description="Sort by (updated, full_name, created, pushed)"),
-    direction: str = Query("desc", description="Sort direction (asc, desc)"),
-    page: int = Query(1, ge=1, description="Page number"),
-    per_page: int = Query(30, ge=1, le=100, description="Items per page")
+    background_tasks: BackgroundTasks,
+    page: int = 1,
+    per_page: int = 50,
+    sort: str = "updated",
+    direction: str = "desc",
+    visibility: Optional[str] = None
 ):
     """
-    Get user's GitHub repositories with filtering, sorting, and pagination
+    Get user's GitHub repositories
+    ✅ OPTIMIZED: Returns immediately, saves to DB in background
     """
-    github_token = await get_github_token(request, db)  # Pass db
-    
-    if not github_token:
-        logger.error("No GitHub token for repos request")
-        raise HTTPException(
-            status_code=401,
-            detail="GitHub account not connected. Please reconnect your GitHub account."
-        )
-    
     try:
-        # Build cache key
-        cache_key = get_cache_key("repos", github_token[:10], query, type, sort, direction, page, per_page)
-        cached = get_cached_data(cache_key)
-        if cached:
-            logger.info("Returning cached repos")
-            return cached
+        # Get authentication
+        github_token = await get_github_token(request)
+        user_id = await get_user_id(request)
         
-        # Prepare query parameters for GitHub API
+        logger.info(f"📦 Fetching repositories for user: {user_id}")
+        
+        # Build GitHub API URL
+        url = "https://api.github.com/user/repos"
         params = {
-            "per_page": per_page,
             "page": page,
+            "per_page": per_page,
             "sort": sort,
-            "direction": direction
+            "direction": direction,
         }
         
-        # Determine endpoint based on type
-        if type == "all":
-            endpoint = "/user/repos"
-            params["affiliation"] = "owner,collaborator,organization_member"
-        elif type == "owner":
-            endpoint = "/user/repos"
-            params["affiliation"] = "owner"
-        elif type == "member":
-            endpoint = "/user/repos"
-            params["affiliation"] = "collaborator,organization_member"
-        else:
-            endpoint = "/user/repos"
+        if visibility:
+            params["visibility"] = visibility
         
-        logger.info(f"Fetching repos from GitHub: {endpoint} with params {params}")
+        # ✅ Fetch from GitHub API (this is the bottleneck)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                params=params,
+                headers={
+                    "Authorization": f"token {github_token}",
+                    "Accept": "application/vnd.github.v3+json"
+                },
+                timeout=30.0
+            )
         
-        # Fetch repositories
-        repos = await make_github_request(endpoint, github_token, params)
+        if response.status_code != 200:
+            logger.error(f"GitHub API error: {response.status_code}")
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"GitHub API error: {response.text}"
+            )
         
-        # Client-side filtering by query if needed
-        if query:
-            query_lower = query.lower()
-            repos = [
-                repo for repo in repos
-                if query_lower in repo.get("name", "").lower() or
-                   query_lower in repo.get("description", "").lower() or
-                   query_lower in repo.get("full_name", "").lower()
-            ]
+        repos_data = response.json()
+        logger.info(f"📊 Fetched {len(repos_data)} repositories from GitHub")
         
-        logger.info(f"Fetched {len(repos)} repositories")
+        # ✅ OPTIMIZATION: Add background task for database saves
+        # This runs AFTER we return the response to the client
+        if user_id != "anonymous":
+            background_tasks.add_task(save_repos_in_background, repos_data, user_id)
         
-        # Cache the results
-        set_cached_data(cache_key, repos, timedelta(minutes=3))
+        # ✅ Transform and return immediately (don't wait for DB)
+        transformed_repos = [
+            {
+                "id": repo["id"],
+                "name": repo["name"],
+                "full_name": repo["full_name"],
+                "owner": {
+                    "login": repo["owner"]["login"],
+                    "avatar_url": repo["owner"]["avatar_url"]
+                },
+                "private": repo["private"],
+                "html_url": repo["html_url"],
+                "description": repo["description"],
+                "fork": repo["fork"],
+                "created_at": repo["created_at"],
+                "updated_at": repo["updated_at"],
+                "pushed_at": repo["pushed_at"],
+                "language": repo["language"],
+                "stargazers_count": repo["stargazers_count"],
+                "watchers_count": repo["watchers_count"],
+                "forks_count": repo["forks_count"],
+                "open_issues_count": repo["open_issues_count"],
+                "default_branch": repo["default_branch"],
+                "visibility": repo.get("visibility", "private" if repo["private"] else "public")
+            }
+            for repo in repos_data
+        ]
         
-        return repos
+        # ✅ Return immediately (database save happens in background)
+        return {
+            "repositories": transformed_repos,
+            "page": page,
+            "per_page": per_page,
+            "total": len(transformed_repos),
+            "user_authenticated": user_id != "anonymous",
+            "saved_to_db": "background"  # Indicate it's happening in background
+        }
         
-    except GitHubAPIError as e:
-        logger.error(f"GitHub API error fetching repos: {e.message}")
-        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching repositories: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch repositories")
-
-
-@router.get("/repos/{owner}/{repo}/files")
-async def get_repository_files(
-    owner: str,
-    repo: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),  # Added database dependency
-    branch: Optional[str] = Query(None, description="Branch name (default: default branch)"),
-    path: Optional[str] = Query("", description="Path to fetch files from"),
-    recursive: bool = Query(True, description="Fetch files recursively")
-):
-    """
-    Get all files from a specific repository
-    Returns a tree structure of files with metadata
-    """
-    github_token = await get_github_token(request, db)  # Pass db
-    
-    if not github_token:
+        logger.error(f"Error fetching repositories: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=401,
-            detail="GitHub account not connected"
+            status_code=500,
+            detail=f"Failed to fetch repositories: {str(e)}"
         )
-    
-    try:
-        cache_key = get_cache_key("repo_files", owner, repo, branch or "default", path, recursive)
-        cached = get_cached_data(cache_key)
-        if cached:
-            return cached
-        
-        # First, get repository info to get default branch
-        repo_info = await make_github_request(f"/repos/{owner}/{repo}", github_token)
-        default_branch = branch or repo_info.get("default_branch", "main")
-        
-        # Get the tree recursively
-        tree_endpoint = f"/repos/{owner}/{repo}/git/trees/{default_branch}"
-        params = {}
-        if recursive:
-            params["recursive"] = "1"
-        
-        tree_response = await make_github_request(tree_endpoint, github_token, params)
-        
-        # Process the tree
-        files = []
-        directories = []
-        
-        for item in tree_response.get("tree", []):
-            item_path = item.get("path", "")
-            
-            if path and not item_path.startswith(path):
-                continue
-            
-            item_data = {
-                "path": item_path,
-                "name": item_path.split("/")[-1],
-                "type": item.get("type"),
-                "sha": item.get("sha"),
-                "size": item.get("size", 0),
-                "url": item.get("url"),
-                "mode": item.get("mode")
-            }
-            
-            if item.get("type") == "blob":
-                files.append(item_data)
-            elif item.get("type") == "tree":
-                directories.append(item_data)
-        
-        result = {
-            "repository": repo,
-            "owner": owner,
-            "branch": default_branch,
-            "path": path,
-            "total_files": len(files),
-            "total_directories": len(directories),
-            "files": files,
-            "directories": directories,
-            "truncated": tree_response.get("truncated", False)
-        }
-        
-        set_cached_data(cache_key, result, timedelta(minutes=10))
-        
-        return result
-        
-    except GitHubAPIError as e:
-        logger.error(f"GitHub API error fetching files: {e.message}")
-        raise HTTPException(status_code=e.status_code, detail=e.message)
-    except Exception as e:
-        logger.error(f"Error fetching repository files: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch repository files")
 
 
-@router.post("/repos/{owner}/{repo}/scan")
-async def scan_repository(
-    owner: str,
-    repo: str,
+@router.get("/repos/from-database")
+async def get_repos_from_database(
     request: Request,
-    db: AsyncSession = Depends(get_db),  # Added database dependency
-    current_user: dict = Depends(get_current_user)  # Added authentication
+    limit: int = 50,
+    offset: int = 0
 ):
     """
-    Trigger a security scan on a repository
-    Requires authentication
+    Get user's repositories from database
+    ✅ Fast local cache lookup
     """
-    github_token = await get_github_token(request, db)  # Pass db
-    
-    if not github_token:
-        raise HTTPException(status_code=401, detail="GitHub account not connected")
-    
     try:
-        # Verify repository exists and user has access
-        repo_info = await make_github_request(f"/repos/{owner}/{repo}", github_token)
+        user_id = await get_user_id(request)
         
-        # Log audit event for scan initiation
-        await DatabaseService.log_audit_event(
-            db,
-            action="SCAN_INITIATED",
-            resource=f"repository:{owner}/{repo}",
-            success=True,
-            user_email=current_user.get("sub"),
-            event_metadata={
-                "repository": f"{owner}/{repo}",
-                "repository_id": repo_info.get("id"),
-                "default_branch": repo_info.get("default_branch")
+        if user_id == "anonymous":
+            return {
+                "repositories": [],
+                "count": 0,
+                "limit": limit,
+                "offset": offset,
+                "error": "User not authenticated"
             }
+        
+        logger.info(f"📊 Fetching repositories from database for user: {user_id}")
+        
+        repos = await get_user_repositories_from_db(
+            user_id=user_id,
+            limit=limit,
+            offset=offset
         )
-        
-        scan_id = f"scan_{int(datetime.utcnow().timestamp())}"
-        
-        logger.info(f"Scan initiated for {owner}/{repo} by {current_user.get('sub')}")
-        
-        # TODO: Implement actual scanning logic here
-        # This could trigger a background task or queue job
         
         return {
-            "status": "scan_initiated",
-            "repository": f"{owner}/{repo}",
-            "message": "Security scan has been initiated",
-            "scan_id": scan_id,
-            "initiated_by": current_user.get("sub"),
-            "initiated_at": datetime.utcnow().isoformat()
+            "repositories": repos,
+            "count": len(repos),
+            "limit": limit,
+            "offset": offset
         }
         
-    except GitHubAPIError as e:
-        # Log failed scan attempt
-        await DatabaseService.log_audit_event(
-            db,
-            action="SCAN_FAILED",
-            resource=f"repository:{owner}/{repo}",
-            success=False,
-            user_email=current_user.get("sub"),
-            error_message=e.message
-        )
-        logger.error(f"GitHub API error initiating scan: {e.message}")
-        raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
-        logger.error(f"Error initiating scan: {e}")
-        raise HTTPException(status_code=500, detail="Failed to initiate scan")
+        logger.error(f"Error fetching from database: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error: {str(e)}"
+        )
+
+@router.get("/repos/{owner}/{repo}")
+async def get_repo_details(
+    owner: str,
+    repo: str,
+    request: Request
+):
+    """
+    Get detailed information about a specific repository
+    """
+    try:
+        github_token = await get_github_token(request)
+        
+        url = f"https://api.github.com/repos/{owner}/{repo}"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                headers={
+                    "Authorization": f"token {github_token}",
+                    "Accept": "application/vnd.github.v3+json"
+                },
+                timeout=30.0
+            )
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"GitHub API error: {response.text}"
+            )
+        
+        return response.json()
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching repository details: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch repository details: {str(e)}"
+        )
 
 
-@router.get("/health")
-async def github_health_check():
-    """Health check for GitHub integration"""
-    return {
-        "service": "GitHub Integration",
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat()
-    }
+@router.get("/repos/{owner}/{repo}/branches")
+async def get_repo_branches(
+    owner: str,
+    repo: str,
+    request: Request
+):
+    """
+    Get branches for a specific repository
+    """
+    try:
+        github_token = await get_github_token(request)
+        
+        url = f"https://api.github.com/repos/{owner}/{repo}/branches"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                headers={
+                    "Authorization": f"token {github_token}",
+                    "Accept": "application/vnd.github.v3+json"
+                },
+                timeout=30.0
+            )
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"GitHub API error: {response.text}"
+            )
+        
+        return response.json()
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching branches: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch branches: {str(e)}"
+        )
+
+
+@router.get("/user")
+async def get_github_user(request: Request):
+    """
+    Get authenticated GitHub user information
+    """
+    try:
+        github_token = await get_github_token(request)
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"token {github_token}",
+                    "Accept": "application/vnd.github.v3+json"
+                },
+                timeout=30.0
+            )
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Failed to fetch user information"
+            )
+        
+        return response.json()
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching user: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch user information: {str(e)}"
+        )
+
+
+@router.get("/profile")
+async def get_github_profile(request: Request):
+    """
+    Alias for /user endpoint - Get authenticated GitHub user information
+    """
+    return await get_github_user(request)

@@ -112,25 +112,81 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
 
   // Simulate Data Fetching
-  const fetchData = () => {
-    setLoading(true);
-    // In real app: fetch('/api/stats').then(...)
-    setTimeout(() => {
-      setData(generateData()); // Regenerate random data to simulate real-time updates
-      setLoading(false);
-      setRefreshing(false);
-    }, 800);
-  };
+  const fetchData = async () => {
+  setLoading(true);
+  try {
+    const [statsRes, trendsRes, activityRes, filesRes] = await Promise.all([
+      fetch('http://localhost:8000/api/scanning/dashboard/stats', { credentials: 'include' }),
+      fetch('http://localhost:8000/api/scanning/dashboard/trends?days=7', { credentials: 'include' }),
+      fetch('http://localhost:8000/api/scanning/dashboard/recent-scans?limit=5', { credentials: 'include' }),
+      fetch('http://localhost:8000/api/scanning/dashboard/vulnerable-files?limit=5', { credentials: 'include' })
+    ]);
+
+    if (!statsRes.ok) throw new Error('Failed to fetch stats');
+    
+    const statsData = await statsRes.json();
+    const trendsData = await trendsRes.json();
+    const activityData = await activityRes.json();
+    const filesData = await filesRes.json();
+
+    const severity = [
+      { name: "Critical", value: statsData.stats.criticalVulns, color: "#ef4444" },
+      { name: "High", value: statsData.stats.highVulns, color: "#f97316" },
+      { name: "Medium", value: statsData.stats.mediumVulns, color: "#eab308" },
+      { name: "Low", value: statsData.stats.lowVulns, color: "#3b82f6" }
+    ];
+
+    setData({
+      stats: statsData.stats,
+      trends: trendsData.trends || [],
+      severity: severity,
+      recentActivity: activityData.recentActivity || [],
+      vulnerableFiles: filesData.vulnerableFiles || []
+    });
+
+    console.log('✅ Dashboard data loaded');
+
+  } catch (error: any) {
+    console.error('❌ Dashboard fetch error:', error);
+    setData({
+      stats: { totalRepos: 0, criticalVulns: 0, filesScanned: 0, recentAlerts: 0 },
+      trends: [],
+      severity: [],
+      recentActivity: [],
+      vulnerableFiles: []
+    });
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+};
 
   useEffect(() => {
+  fetchData();
+  
+  const interval = setInterval(() => {
+    console.log('🔄 Auto-refreshing...');
     fetchData();
-  }, []);
+  }, 30000);
+  
+  return () => clearInterval(interval);
+}, []);
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchData();
   };
-
+  
+  if (loading) {
+  return (
+    <div className="w-full h-full bg-black flex items-center justify-center">
+      <div className="text-center">
+        <RefreshCw className="w-12 h-12 text-indigo-500 animate-spin mx-auto mb-4" />
+        <p className="text-zinc-400">Loading dashboard data...</p>
+      </div>
+    </div>
+  );
+}
   return (
     <div className="w-full h-full bg-black text-zinc-100 font-sans selection:bg-indigo-500/30 p-6 lg:p-8">
       {/* --- HEADER --- */}
@@ -259,7 +315,9 @@ export default function Dashboard() {
             </ResponsiveContainer>
             {/* Center Text */}
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-3xl font-bold text-white">{data.stats.criticalVulns + 45 + 67}</span>
+              <span className="text-3xl font-bold text-white">
+                {data.severity.reduce((acc, item) => acc + item.value, 0)}
+                </span>
               <span className="text-xs text-zinc-500 uppercase tracking-widest">Issues</span>
             </div>
           </div>
