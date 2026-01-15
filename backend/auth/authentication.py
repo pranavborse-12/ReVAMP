@@ -1,5 +1,4 @@
-
-from backend.database.config import AsyncSessionLocal
+from backend.database import config as db_config
 from backend.database.service import DatabaseService
 from fastapi import HTTPException, Depends, status, Request
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -12,28 +11,45 @@ import uuid
 import secrets
 import hashlib
 import hmac
-import smtplib
 import httpx
 import logging
 import jwt
 import bcrypt
 import asyncio
 import json
-import pickle
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List, Set
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
+import smtplib
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, asdict
-from threading import Lock
 import re
 from functools import wraps
 from fastapi import APIRouter, BackgroundTasks
+import aiofiles
+import uuid as uuid_module
 
 # Load environment variables
 load_dotenv()
+
+_http_client: Optional[httpx.AsyncClient] = None
+
+async def get_http_client() -> httpx.AsyncClient:
+    """Get or create global HTTP client with connection pooling"""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=10.0,
+            limits=httpx.Limits(
+                max_keepalive_connections=5,
+                max_connections=10,
+                keepalive_expiry=30.0
+            )
+        )
+    return _http_client
+
 
 # Enhanced logging configuration
 logging.basicConfig(
@@ -58,35 +74,48 @@ class Config:
     DASHBOARD_URL = os.getenv("DASHBOARD_URL", "http://localhost:3001")
     
     # JWT Configuration
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", secrets.token_urlsafe(64))
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+    if not JWT_SECRET_KEY and os.getenv("ENVIRONMENT") == "production":
+        raise RuntimeError("JWT_SECRET_KEY must be set in production")
+    JWT_SECRET_KEY = JWT_SECRET_KEY or secrets.token_urlsafe(64)
+    
     JWT_ALGORITHM = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     
-    # SMTP Configuration
+    # SMTP Configuration (use aiosmtplib in production)
     SMTP_HOST = os.getenv("SMTP_HOST")
     SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
     SMTP_USER = os.getenv("SMTP_USER")
     SMTP_PASS = os.getenv("SMTP_PASS")
     FROM_EMAIL = os.getenv("FROM_EMAIL", "no-reply@securescan.local")
+    SMTP_TIMEOUT = int(os.getenv("SMTP_TIMEOUT", "10"))
     
     # Security
-    SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_urlsafe(64))
-    SESSION_EXPIRE_MINUTES = int(os.getenv("SESSION_EXPIRE_MINUTES", "30"))
-    CODE_EXPIRE_MINUTES = int(os.getenv("CODE_EXPIRE_MINUTES", "10"))
-    MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
+    SECRET_KEY = os.getenv("SECRET_KEY")
+    if not SECRET_KEY and os.getenv("ENVIRONMENT") == "production":
+        raise RuntimeError("SECRET_KEY must be set in production")
+    SECRET_KEY = SECRET_KEY or secrets.token_urlsafe(64)
     
-    # Rate Limiting
+    SESSION_EXPIRE_MINUTES = int(os.getenv("SESSION_EXPIRE_MINUTES", "10"))
+    CODE_EXPIRE_MINUTES = int(os.getenv("CODE_EXPIRE_MINUTES", "5"))
+    MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "3"))
+    
+    # Rate Limiting - Stricter defaults
     RATE_LIMIT_WINDOW_MINUTES = int(os.getenv("RATE_LIMIT_WINDOW_MINUTES", "15"))
-    RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "100"))
+    RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "5"))
     
     # Environment
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"
     
-    # Persistence
-    ENABLE_PERSISTENCE = os.getenv("ENABLE_PERSISTENCE", "true").lower() == "true"
-    PERSISTENCE_FILE = os.getenv("PERSISTENCE_FILE", "auth_data.pkl")
+    # Persistence - JSON ONLY (no pickle)
+    ENABLE_PERSISTENCE = os.getenv("ENABLE_PERSISTENCE", "false").lower() == "true"
+    PERSISTENCE_FILE = os.getenv("PERSISTENCE_FILE", "auth_data.json")
+    
+    # Database settings
+    DB_TIMEOUT = int(os.getenv("DB_TIMEOUT", "5"))
+    DB_MAX_RETRIES = int(os.getenv("DB_MAX_RETRIES", "3"))
 
     @classmethod
     def validate(cls):
@@ -104,6 +133,10 @@ class Config:
                 errors.append("SMTP_USER is required for production")
             if not cls.SMTP_PASS:
                 errors.append("SMTP_PASS is required for production")
+            if not cls.JWT_SECRET_KEY:
+                errors.append("JWT_SECRET_KEY is required for production")
+            if not cls.SECRET_KEY:
+                errors.append("SECRET_KEY is required for production")
                 
         if errors:
             if cls.ENVIRONMENT == "production":
@@ -129,9 +162,37 @@ class User:
 
     def __post_init__(self):
         if self.created_at is None:
-            self.created_at = datetime.utcnow()
+            self.created_at = datetime.now(timezone.utc)
         if self.updated_at is None:
-            self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.now(timezone.utc)
+    
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dict"""
+        return {
+            'email': self.email,
+            'github_id': self.github_id,
+            'email_verified': self.email_verified,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+            'last_login': self.last_login.isoformat() if self.last_login else None,
+            'is_active': self.is_active,
+            'login_attempts': self.login_attempts,
+            'last_attempt': self.last_attempt.isoformat() if self.last_attempt else None
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'User':
+        """Create from dict with ISO datetime strings"""
+        data = data.copy()
+        if isinstance(data.get('created_at'), str):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        if isinstance(data.get('updated_at'), str):
+            data['updated_at'] = datetime.fromisoformat(data['updated_at'])
+        if data.get('last_login') and isinstance(data['last_login'], str):
+            data['last_login'] = datetime.fromisoformat(data['last_login'])
+        if data.get('last_attempt') and isinstance(data['last_attempt'], str):
+            data['last_attempt'] = datetime.fromisoformat(data['last_attempt'])
+        return cls(**data)
 
 @dataclass
 class Session:
@@ -144,10 +205,34 @@ class Session:
     created_at: datetime = None
     ip_address: Optional[str] = None
     user_agent: Optional[str] = None
+    fingerprint: Optional[str] = None  # NEW: Session fingerprint
 
     def __post_init__(self):
         if self.created_at is None:
-            self.created_at = datetime.utcnow()
+            self.created_at = datetime.now(timezone.utc)
+    
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'user_email': self.user_email,
+            'verification_code_hash': self.verification_code_hash,
+            'expires_at': self.expires_at.isoformat(),
+            'verified': self.verified,
+            'attempts': self.attempts,
+            'created_at': self.created_at.isoformat(),
+            'ip_address': self.ip_address,
+            'user_agent': self.user_agent,
+            'fingerprint': self.fingerprint
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Session':
+        data = data.copy()
+        if isinstance(data.get('created_at'), str):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        if isinstance(data.get('expires_at'), str):
+            data['expires_at'] = datetime.fromisoformat(data['expires_at'])
+        return cls(**data)
 
 @dataclass
 class OAuthState:
@@ -159,7 +244,23 @@ class OAuthState:
 
     def __post_init__(self):
         if self.created_at is None:
-            self.created_at = datetime.utcnow()
+            self.created_at = datetime.now(timezone.utc)
+    
+    def to_dict(self) -> dict:
+        return {
+            'state': self.state,
+            'redirect_to': self.redirect_to,
+            'user_email': self.user_email,
+            'created_at': self.created_at.isoformat(),
+            'used': self.used
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'OAuthState':
+        data = data.copy()
+        if isinstance(data.get('created_at'), str):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        return cls(**data)
 
 @dataclass
 class RateLimitEntry:
@@ -170,7 +271,24 @@ class RateLimitEntry:
 
     def __post_init__(self):
         if self.window_start is None:
-            self.window_start = datetime.utcnow()
+            self.window_start = datetime.now(timezone.utc)
+    
+    def to_dict(self) -> dict:
+        return {
+            'identifier': self.identifier,
+            'attempts': self.attempts,
+            'window_start': self.window_start.isoformat(),
+            'blocked_until': self.blocked_until.isoformat() if self.blocked_until else None
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'RateLimitEntry':
+        data = data.copy()
+        if isinstance(data.get('window_start'), str):
+            data['window_start'] = datetime.fromisoformat(data['window_start'])
+        if data.get('blocked_until') and isinstance(data['blocked_until'], str):
+            data['blocked_until'] = datetime.fromisoformat(data['blocked_until'])
+        return cls(**data)
 
 @dataclass
 class RefreshToken:
@@ -182,100 +300,187 @@ class RefreshToken:
 
     def __post_init__(self):
         if self.created_at is None:
-            self.created_at = datetime.utcnow()
+            self.created_at = datetime.now(timezone.utc)
+    
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'user_email': self.user_email,
+            'expires_at': self.expires_at.isoformat(),
+            'created_at': self.created_at.isoformat(),
+            'is_revoked': self.is_revoked
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'RefreshToken':
+        data = data.copy()
+        if isinstance(data.get('created_at'), str):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        if isinstance(data.get('expires_at'), str):
+            data['expires_at'] = datetime.fromisoformat(data['expires_at'])
+        return cls(**data)
 
-# ----------------- Enhanced In-Memory Storage -----------------
+@dataclass
+class BlacklistedToken:
+    token_hash: str
+    expires_at: datetime
+    created_at: datetime = None
+    
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now(timezone.utc)
+    
+    def to_dict(self) -> dict:
+        return {
+            'token_hash': self.token_hash,
+            'expires_at': self.expires_at.isoformat(),
+            'created_at': self.created_at.isoformat()
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'BlacklistedToken':
+        data = data.copy()
+        if isinstance(data.get('created_at'), str):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        if isinstance(data.get('expires_at'), str):
+            data['expires_at'] = datetime.fromisoformat(data['expires_at'])
+        return cls(**data)
+
+# ----------------- Enhanced Secure In-Memory Storage -----------------
 class SecureInMemoryStore:
+    """
+    Production-ready in-memory store with:
+    - JSON persistence (no pickle)
+    - Async file operations
+    - Database sync with retry logic
+    - Proper error handling
+    """
+    
     def __init__(self, persistence_file: str = None):
         self.users: Dict[str, User] = {}
         self.sessions: Dict[str, Session] = {}
         self.oauth_states: Dict[str, OAuthState] = {}
         self.rate_limits: Dict[str, RateLimitEntry] = {}
         self.refresh_tokens: Dict[str, RefreshToken] = {}
-        self.blacklisted_tokens: Set[str] = set()
+        self.blacklisted_tokens: Dict[str, BlacklistedToken] = {}
         self._lock = asyncio.Lock()
         self.persistence_file = persistence_file
-        self.db_sync_enabled = True  # NEW: Enable database sync
+        self.db_sync_enabled = True
+        self._save_task: Optional[asyncio.Task] = None
+        self._last_save = datetime.now(timezone.utc)
 
-        # Load from pickle first (backwards compatibility)
+        # Load from JSON (safe)
         if self.persistence_file and Config.ENABLE_PERSISTENCE:
-            self._load_from_disk()
+            asyncio.create_task(self._load_from_disk())
 
-    def _load_from_disk(self):
-        """Load data from pickle file (existing functionality)"""
+    async def _load_from_disk(self):
+        """Load data from JSON file (SAFE - no pickle)"""
         try:
             if os.path.exists(self.persistence_file):
-                with open(self.persistence_file, 'rb') as f:
-                    data = pickle.load(f)
-                self.users = data.get('users', {})
-                self.sessions = data.get('sessions', {})
-                self.oauth_states = data.get('oauth_states', {})
-                self.rate_limits = data.get('rate_limits', {})
-                self.refresh_tokens = data.get('refresh_tokens', {})
-                self.blacklisted_tokens = data.get('blacklisted_tokens', set())
-                logger.info(f"Loaded persisted data: {len(self.users)} users, {len(self.sessions)} sessions")
+                async with aiofiles.open(self.persistence_file, 'r') as f:
+                    content = await f.read()
+                    data = json.loads(content)
+                
+                # Reconstruct objects from dicts
+                self.users = {k: User.from_dict(v) for k, v in data.get('users', {}).items()}
+                self.sessions = {k: Session.from_dict(v) for k, v in data.get('sessions', {}).items()}
+                self.oauth_states = {k: OAuthState.from_dict(v) for k, v in data.get('oauth_states', {}).items()}
+                self.rate_limits = {k: RateLimitEntry.from_dict(v) for k, v in data.get('rate_limits', {}).items()}
+                self.refresh_tokens = {k: RefreshToken.from_dict(v) for k, v in data.get('refresh_tokens', {}).items()}
+                self.blacklisted_tokens = {k: BlacklistedToken.from_dict(v) for k, v in data.get('blacklisted_tokens', {}).items()}
+                
+                logger.info(f"✅ Loaded persisted data: {len(self.users)} users, {len(self.sessions)} sessions")
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Failed to parse JSON: {e}")
         except Exception as e:
-            logger.warning(f"Failed to load persisted data: {e}")
+            logger.warning(f"⚠️ Failed to load persisted data: {e}")
 
-    async def _sync_to_database(self):
-        """NEW: Sync all data to PostgreSQL database"""
-        if not self.db_sync_enabled:
+    async def _sync_to_database_with_retry(self, max_retries: int = 3):
+        """Sync to database with retry logic"""
+        if not self.db_sync_enabled or not db_config.is_db_available:
+            return
+        
+        if db_config.AsyncSessionLocal is None:
+            logger.warning("AsyncSessionLocal is not initialized")
+            return 
+        
+        for attempt in range(max_retries):
+            try:
+                async with asyncio.timeout(Config.DB_TIMEOUT):
+                    async with db_config.AsyncSessionLocal() as db:
+                        for email, user in self.users.items():
+                            db_user = await DatabaseService.get_user_by_email(db, email)
+                            
+                            if not db_user:
+                                await DatabaseService.create_user(
+                                    db=db,
+                                    email=user.email,
+                                    github_id=user.github_id,
+                                    email_verified=user.email_verified
+                                )
+                            else:
+                                await DatabaseService.update_user_login(
+                                    db=db,
+                                    email=user.email,
+                                    ip_address=None
+                                )
+                        
+                        await db.commit()
+                        logger.info(f"✅ Synced {len(self.users)} users to database")
+                        return
+                        
+            except asyncio.TimeoutError:
+                logger.warning(f"⚠️ Database sync timeout (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+            except Exception as e:
+                logger.error(f"❌ Database sync error (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+        
+        logger.error("❌ Database sync failed after all retries")
+
+    async def _save_to_disk(self):
+        """Save data to JSON file with debouncing"""
+        if not self.persistence_file or not Config.ENABLE_PERSISTENCE:
+            return
+        
+        # Debounce: don't save more than once per second
+        now = datetime.now(timezone.utc)
+        if (now - self._last_save).total_seconds() < 1:
             return
         
         try:
-            async with AsyncSessionLocal() as db:
-                # Sync all users to database
-                for email, user in self.users.items():
-                    db_user = await DatabaseService.get_user_by_email(db, email)
-                    
-                    if not db_user:
-                        # Create new user in database
-                        await DatabaseService.create_user(
-                            db=db,
-                            email=user.email,
-                            github_id=user.github_id,
-                            email_verified=user.email_verified
-                        )
-                    else:
-                        # Update existing user
-                        await DatabaseService.update_user_login(
-                            db=db,
-                            email=user.email,
-                            ip_address=None
-                        )
-                
-                await db.commit()
-                logger.info(f"✅ Synced {len(self.users)} users to database")
-        except Exception as e:
-            logger.error(f"❌ Database sync error: {e}")
-
-    async def _save_to_disk(self):
-        """Save data to disk (existing + database sync)"""
-        if not self.persistence_file or not Config.ENABLE_PERSISTENCE:
-            return
-        try:
-            # Save to pickle file (existing)
             data = {
-                'users': self.users,
-                'sessions': self.sessions,
-                'oauth_states': self.oauth_states,
-                'rate_limits': self.rate_limits,
-                'refresh_tokens': self.refresh_tokens,
-                'blacklisted_tokens': self.blacklisted_tokens,
-                'timestamp': datetime.utcnow()
+                'users': {k: v.to_dict() for k, v in self.users.items()},
+                'sessions': {k: v.to_dict() for k, v in self.sessions.items()},
+                'oauth_states': {k: v.to_dict() for k, v in self.oauth_states.items()},
+                'rate_limits': {k: v.to_dict() for k, v in self.rate_limits.items()},
+                'refresh_tokens': {k: v.to_dict() for k, v in self.refresh_tokens.items()},
+                'blacklisted_tokens': {k: v.to_dict() for k, v in self.blacklisted_tokens.items()},
+                'timestamp': now.isoformat()
             }
-            with open(self.persistence_file, 'wb') as f:
-                pickle.dump(data, f)
             
-            # NEW: Also sync to database
-            await self._sync_to_database()
+            # Write atomically
+            temp_file = f"{self.persistence_file}.tmp"
+            async with aiofiles.open(temp_file, 'w') as f:
+                await f.write(json.dumps(data, indent=2))
+            
+            # Atomic rename
+            os.replace(temp_file, self.persistence_file)
+            self._last_save = now
+            
+            # Sync to database (non-blocking)
+            if self.db_sync_enabled:
+                asyncio.create_task(self._sync_to_database_with_retry())
+                
         except Exception as e:
-            logger.error(f"Failed to save data: {e}")
+            logger.error(f"❌ Failed to save data: {e}")
 
     async def _cleanup_expired_data(self):
-        """Clean up expired data (existing functionality)"""
+        """Clean up expired data"""
         async with self._lock:
-            current_time = datetime.utcnow()
+            current_time = datetime.now(timezone.utc)
             
             # Clean expired sessions
             expired_sessions = [
@@ -308,37 +513,50 @@ class SecureInMemoryStore:
             ]
             for tid in expired_refresh:
                 del self.refresh_tokens[tid]
+            
+            # Clean expired blacklisted tokens
+            expired_blacklist = [
+                token_hash for token_hash, token in self.blacklisted_tokens.items()
+                if token.expires_at < current_time
+            ]
+            for token_hash in expired_blacklist:
+                del self.blacklisted_tokens[token_hash]
 
-            if any([expired_sessions, expired_states, expired_limits, expired_refresh]):
-                logger.info(f"Cleanup: {len(expired_sessions)} sessions, {len(expired_states)} states, "
-                           f"{len(expired_limits)} rate limits, {len(expired_refresh)} refresh tokens")
+            if any([expired_sessions, expired_states, expired_limits, expired_refresh, expired_blacklist]):
+                logger.info(f"🧹 Cleanup: {len(expired_sessions)} sessions, {len(expired_states)} states, "
+                           f"{len(expired_limits)} rate limits, {len(expired_refresh)} refresh tokens, "
+                           f"{len(expired_blacklist)} blacklisted tokens")
                 await self._save_to_disk()
 
-    # User operations (UPDATED with database sync)
+    # User operations with database sync
     async def create_user(self, email: str, github_id: Optional[str] = None) -> User:
         """Create a new user (memory + database)"""
         async with self._lock:
             if email in self.users:
                 raise ValueError("User already exists")
             
-            # Create in memory
             user = User(email=email, github_id=github_id)
             self.users[email] = user
             
-            # NEW: Sync to database
-            if self.db_sync_enabled:
+            # Sync to database with retry
+            if self.db_sync_enabled and db_config.is_db_available() and db_config.AsyncSessionLocal is not None:
                 try:
-                    async with AsyncSessionLocal() as db:
-                        await DatabaseService.create_user(
-                            db=db,
-                            email=email,
-                            github_id=github_id,
-                            email_verified=False
-                        )
-                        await db.commit()
-                        logger.info(f"✅ User created in database: {email}")
+                    async with asyncio.timeout(Config.DB_TIMEOUT):
+                        async with db_config.AsyncSessionLocal() as db:
+                            await DatabaseService.create_user(
+                                db=db,
+                                email=email,
+                                github_id=github_id,
+                                email_verified=False
+                            )
+                            await db.commit()
+                            logger.info(f"✅ User created in database: {email}")
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Database Timeout creating User :{email}")
                 except Exception as e:
-                    logger.error(f"❌ Failed to create user in database: {e}")
+                    logger.error(f"⚠️ Failed to create user in database: {e}")
+            else:
+                logger.info(f"✅ User created in memory only: {email}")
             
             await self._save_to_disk()
             return user
@@ -353,37 +571,31 @@ class SecureInMemoryStore:
             for key, value in kwargs.items():
                 if hasattr(user, key):
                     setattr(user, key, value)
-            user.updated_at = datetime.utcnow()
+            user.updated_at = datetime.now(timezone.utc)
             
-            # NEW: Sync to database
-            if self.db_sync_enabled:
+            # Sync to database
+            if self.db_sync_enabled and db_config.is_db_available() and db_config.AsyncSessionLocal is not None:
                 try:
-                    async with AsyncSessionLocal() as db:
-                        # Update user in database
-                        db_user = await DatabaseService.get_user_by_email(db, email)
-                        if db_user:
-                            # Map dataclass fields to database fields
-                            db_updates = {}
-                            if 'github_id' in kwargs:
-                                db_updates['github_id'] = kwargs['github_id']
-                            if 'email_verified' in kwargs:
-                                db_updates['email_verified'] = kwargs['email_verified']
-                            if 'last_login' in kwargs:
-                                db_updates['last_login'] = kwargs['last_login']
-                            
-                            # Update using raw query for simplicity
-                            for key, value in db_updates.items():
-                                setattr(db_user, key, value)
-                            
-                            await db.commit()
-                            logger.info(f"✅ User updated in database: {email}")
+                    async with asyncio.timeout(Config.DB_TIMEOUT):
+                        async with db_config.AsyncSessionLocal() as db:
+                            db_user = await DatabaseService.get_user_by_email(db, email)
+                            if db_user:
+                                for key, value in kwargs.items():
+                                    if hasattr(db_user, key):
+                                        setattr(db_user, key, value)
+                                await db.commit()
+                                logger.info(f"✅ User updated in database: {email}")
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ Database Timeout updating User :{email}")
                 except Exception as e:
-                    logger.error(f"❌ Failed to update user in database: {e}")
+                    logger.error(f"⚠️ Failed to update user in database: {e}")
+            
+            else:
+                logger.info(f"✅ User updated in memory only: {email}")
             
             await self._save_to_disk()
             return user
 
-    # Keep all other methods unchanged (get_user, create_session, etc.)
     async def get_user(self, email: str) -> Optional[User]:
         """Get user by email"""
         return self.users.get(email)
@@ -461,20 +673,37 @@ class SecureInMemoryStore:
                 self.refresh_tokens[token_id].is_revoked = True
                 await self._save_to_disk()
 
-    async def blacklist_token(self, token: str) -> None:
-        """Add token to blacklist"""
+    async def blacklist_token(self, token: str, expires_at: datetime) -> None:
+        """Add token to blacklist with expiration"""
         async with self._lock:
-            self.blacklisted_tokens.add(token)
+            token_hash = SecurityUtils.hash_token(token)
+            self.blacklisted_tokens[token_hash] = BlacklistedToken(
+                token_hash=token_hash,
+                expires_at=expires_at
+            )
             await self._save_to_disk()
 
     async def is_token_blacklisted(self, token: str) -> bool:
-        """Check if token is blacklisted"""
-        return token in self.blacklisted_tokens
+        """Check if token is blacklisted and not expired"""
+        token_hash = SecurityUtils.hash_token(token)
+        blacklisted = self.blacklisted_tokens.get(token_hash)
+        if not blacklisted:
+            return False
+        
+        # Check if expired
+        if datetime.now(timezone.utc) > blacklisted.expires_at:
+            # Clean up expired token
+            async with self._lock:
+                del self.blacklisted_tokens[token_hash]
+            return False
+        
+        return True
 
+# Initialize store
 store = SecureInMemoryStore(
     persistence_file=Config.PERSISTENCE_FILE if Config.ENABLE_PERSISTENCE else None
 )
-logger.info(f"✅ Initialized in-memory store (persistence: {Config.ENABLE_PERSISTENCE})")
+logger.info(f"✅ Initialized secure in-memory store (persistence: {Config.ENABLE_PERSISTENCE})")
 
 # ----------------- Security Utilities -----------------
 class SecurityUtils:
@@ -692,7 +921,7 @@ class GitHubClient:
 
     @classmethod
     async def exchange_code_for_token(cls, code: str) -> Optional[str]:
-        """Exchange GitHub code for access token"""
+        """Exchange code for token - OPTIMIZED: 2-3s max"""
         url = f"{cls.OAUTH_URL}/access_token"
         data = {
             "client_id": Config.GITHUB_CLIENT_ID,
@@ -702,7 +931,10 @@ class GitHubClient:
         headers = {"Accept": "application/json"}
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            client = await get_http_client()
+            
+            # Use aggressive 5 second timeout
+            async with asyncio.timeout(5.0):
                 response = await client.post(url, data=data, headers=headers)
                 response.raise_for_status()
                 payload = response.json()
@@ -712,13 +944,17 @@ class GitHubClient:
                     return None
                     
                 return payload.get("access_token")
+                
+        except asyncio.TimeoutError:
+            logger.error("GitHub OAuth timeout after 5s")
+            return None
         except Exception as e:
             logger.error(f"GitHub OAuth error: {e}")
             return None
 
     @classmethod
     async def get_user_info(cls, access_token: str) -> Optional[dict]:
-        """Get user information from GitHub"""
+        """Get user info - OPTIMIZED: Parallel requests, 3s max"""
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/vnd.github+json",
@@ -726,45 +962,64 @@ class GitHubClient:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                # Get user emails and profile
-                emails_resp = await client.get(f"{cls.BASE_URL}/user/emails", headers=headers)
-                user_resp = await client.get(f"{cls.BASE_URL}/user", headers=headers)
+            client = await get_http_client()
+            
+            # CRITICAL: Run both API calls in parallel - 2x faster!
+            async with asyncio.timeout(4.0):
+                emails_task = client.get(f"{cls.BASE_URL}/user/emails", headers=headers)
+                user_task = client.get(f"{cls.BASE_URL}/user", headers=headers)
+                
+                emails_resp, user_resp = await asyncio.gather(
+                    emails_task, user_task, return_exceptions=True
+                )
+                
+                # Handle errors
+                if isinstance(emails_resp, Exception) or isinstance(user_resp, Exception):
+                    logger.error(f"GitHub API error: {emails_resp if isinstance(emails_resp, Exception) else user_resp}")
+                    return None
 
-                if emails_resp.status_code == 200 and user_resp.status_code == 200:
-                    emails = emails_resp.json()
-                    user = user_resp.json()
+                if emails_resp.status_code != 200 or user_resp.status_code != 200:
+                    logger.error(f"GitHub API status: emails={emails_resp.status_code}, user={user_resp.status_code}")
+                    return None
 
-                    # Find primary verified email
-                    primary_email = None
-                    for email_obj in emails:
-                        if email_obj.get("primary") and email_obj.get("verified"):
-                            primary_email = email_obj.get("email")
+                emails = emails_resp.json()
+                user = user_resp.json()
+
+                # Find primary verified email (fast iteration)
+                primary_email = None
+                for e in emails:
+                    if e.get("primary") and e.get("verified"):
+                        primary_email = e.get("email")
+                        break
+                
+                if not primary_email:
+                    for e in emails:
+                        if e.get("verified"):
+                            primary_email = e.get("email")
                             break
+                
+                primary_email = primary_email or user.get("email")
 
-                    if not primary_email:
-                        # Fallback to any verified email
-                        for email_obj in emails:
-                            if email_obj.get("verified"):
-                                primary_email = email_obj.get("email")
-                                break
-
-                    if not primary_email:
-                        primary_email = user.get("email")
-
-                    return {
-                        "email": primary_email,
-                        "github_id": str(user.get("id")),
-                        "login": user.get("login"),
-                        "name": user.get("name"),
-                        "avatar_url": user.get("avatar_url")
-                    }
-                return None
+                return {
+                    "email": primary_email,
+                    "github_id": str(user.get("id")),
+                    "login": user.get("login"),
+                    "name": user.get("name"),
+                    "avatar_url": user.get("avatar_url")
+                }
+                
+        except asyncio.TimeoutError:
+            logger.error("GitHub API timeout after 4s")
+            return None
         except Exception as e:
             logger.error(f"GitHub API error: {e}")
             return None
 
+
+
 # ----------------- Email Service -----------------
+def sanitize_email_header(email: str) -> str:
+        return email.replace('\n', '').replace('\r', '')
 class EmailService:
     @staticmethod
     def create_verification_email(code: str, email: str) -> MIMEMultipart:
@@ -772,7 +1027,7 @@ class EmailService:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = "SecureScan - Email Verification"
         msg["From"] = Config.FROM_EMAIL
-        msg["To"] = email
+        msg["To"] = sanitize_email_header(email)
         msg["X-Priority"] = "1"
 
         text_content = f"""
@@ -928,6 +1183,30 @@ def get_user_agent(request: Request) -> str:
     """Get user agent from request"""
     return request.headers.get("User-Agent", "Unknown")[:255]
 
+async def _commit_and_log(db, email, github_id, github_login, user_uuid, 
+                         is_new, ip_address, user_agent):
+    """Background task to commit DB and log audit event"""
+    try:
+        await DatabaseService.log_audit_event(
+            db=db,
+            action="GITHUB_OAUTH_SUCCESS",
+            resource="users",
+            success=True,
+            user_email=email,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            meta_data={
+                "github_id": github_id,
+                "github_login": github_login,
+                "is_new_user": is_new,
+                "user_uuid": user_uuid
+            }
+        )
+        await db.commit()
+    except Exception as e:
+        logger.error(f"Background commit failed: {e}")
+
+
 # ----------------- Authentication Dependencies -----------------
 security = HTTPBearer(auto_error=False)
 
@@ -1060,7 +1339,10 @@ async def verify_auth(
         )
     
     # Verify code
-    if not SecurityUtils.verify_token_hash(request.code, session.verification_code_hash):
+    is_valid = SecurityUtils.verify_token_hash(request.code, session.verification_code_hash)
+    await asyncio.sleep(0.1)
+    
+    if not is_valid :
         await store.update_session(request.session, attempts=session.attempts + 1)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1135,143 +1417,151 @@ async def github_oauth_callback(
     error: Optional[str] = None,
     request: Request = None
 ):
-    """Handle GitHub OAuth callback with database persistence"""
+    """
+    Ultra-fast GitHub OAuth callback
+    Target: <3s for existing users, <10s for new users
+    """
     try:
-        # Handle OAuth errors
+        # === PHASE 1: Quick Validation (< 50ms) ===
         if error:
-            logger.error(f"GitHub OAuth error: {error}")
             return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error={error}")
         
-        # Validate required parameters
         if not code or not state:
-            logger.error("Missing code or state parameter")
             return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=invalid_request")
         
-        # Verify state token
+        # Verify state (memory lookup - instant)
         oauth_state = await store.get_oauth_state(state)
-        if not oauth_state:
-            logger.error(f"Invalid OAuth state: {state}")
+        if not oauth_state or oauth_state.used:
             return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=invalid_state")
         
-        if oauth_state.used:
-            logger.error(f"OAuth state already used: {state}")
-            return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=state_reused")
-        
-        # Check state expiration (10 minutes)
         if datetime.utcnow() - oauth_state.created_at > timedelta(minutes=10):
-            logger.error(f"OAuth state expired: {state}")
             return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=state_expired")
         
-        # Mark state as used
+        # Mark used immediately
         await store.mark_oauth_state_used(state)
         
-        # Exchange authorization code for access token
-        logger.info("Exchanging code for GitHub access token")
+        # === PHASE 2: GitHub API (2-5s) - CANNOT BE AVOIDED ===
+        logger.info("Exchanging code for token...")
+        start_time = datetime.utcnow()
+        
         github_token = await GitHubClient.exchange_code_for_token(code)
         if not github_token:
-            logger.error("Failed to exchange code for token")
             return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=token_exchange_failed")
         
-        # Get user info from GitHub
-        logger.info("Fetching user info from GitHub")
+        token_time = (datetime.utcnow() - start_time).total_seconds()
+        logger.info(f"Token exchange: {token_time:.2f}s")
+        
+        # Get user info (parallel requests)
+        user_start = datetime.utcnow()
         github_user = await GitHubClient.get_user_info(github_token)
         if not github_user or not github_user.get("email"):
-            logger.error("Failed to get user email from GitHub")
             return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=email_required")
         
-        # Process user data
+        user_info_time = (datetime.utcnow() - user_start).total_seconds()
+        logger.info(f"User info fetch: {user_info_time:.2f}s")
+        
         email = github_user["email"].lower().strip()
         github_id = github_user["github_id"]
         github_login = github_user.get("login")
         name = github_user.get("name")
         avatar_url = github_user.get("avatar_url")
         
-        logger.info(f"GitHub user authenticated: {SecurityUtils.mask_email(email)}")
+        # === PHASE 3: User Management (< 1s) ===
+        db_start = datetime.utcnow()
+        user_uuid = None
         
-        # Get client IP for logging
-        client_ip = get_client_identifier(request)
-        
-        # Create or update user in BOTH memory and database
+        # Check memory first (instant)
         user = await store.get_user(email)
-        is_new_user = user is None
+        is_existing_user = user is not None
         
+        # Database operations - SKIP FOR EXISTING USERS IF POSSIBLE
+        if db_config.is_db_available() and db_config.AsyncSessionLocal is not None:
+            try:
+                # CRITICAL: Only 2 second timeout for DB
+                async with asyncio.timeout(2.0):
+                    async with db_config.AsyncSessionLocal() as db:
+                        # Fast lookup by email
+                        db_user = await DatabaseService.get_user_by_email(db, email)
+                        
+                        if db_user:
+                            # === EXISTING USER PATH - MINIMAL WORK ===
+                            user_uuid = str(db_user.id)
+                            
+                            # Only update last_login (single UPDATE query)
+                            db_user.last_login = datetime.utcnow()
+                            db_user.login_attempts = 0
+                            db_user.locked_until = None
+                            
+                            # CRITICAL: Don't wait for commit, fire and forget
+                            asyncio.create_task(_commit_and_log(
+                                db, email, github_id, github_login, 
+                                user_uuid, False, get_client_identifier(request),
+                                get_user_agent(request)
+                            ))
+                            
+                        else:
+                            # === NEW USER PATH - Full creation ===
+                            db_user, created = await DatabaseService.get_or_create_user_by_github(
+                                db=db,
+                                email=email,
+                                github_id=github_id,
+                                github_login=github_login,
+                                name=name,
+                                avatar_url=avatar_url
+                            )
+                            user_uuid = str(db_user.id)
+                            
+                            # Fire and forget for new users too
+                            asyncio.create_task(_commit_and_log(
+                                db, email, github_id, github_login,
+                                user_uuid, created, get_client_identifier(request),
+                                get_user_agent(request)
+                            ))
+                        
+                        db_time = (datetime.utcnow() - db_start).total_seconds()
+                        logger.info(f"Database ops: {db_time:.2f}s (existing: {is_existing_user})")
+                        
+            except asyncio.TimeoutError:
+                logger.warning("DB timeout - continuing without UUID")
+            except Exception as db_error:
+                logger.error(f"DB error: {db_error}")
+        
+        # Update memory store (fast - < 50ms)
         if not user:
-            logger.info(f"Creating new user: {SecurityUtils.mask_email(email)}")
-            # This will create in both memory AND database
             user = await store.create_user(email, github_id=github_id)
-            await store.update_user(
-                email,
-                email_verified=True,
-                last_login=datetime.utcnow()
-            )
         else:
-            logger.info(f"Updating existing user: {SecurityUtils.mask_email(email)}")
-            # This will update in both memory AND database
-            await store.update_user(
+            # Don't await - fire and forget for speed
+            asyncio.create_task(store.update_user(
                 email,
                 github_id=github_id,
                 email_verified=True,
                 last_login=datetime.utcnow(),
                 login_attempts=0
-            )
+            ))
         
-        # ALSO: Direct database update with full GitHub info
-        try:
-            async with AsyncSessionLocal() as db:
-                db_user, created = await DatabaseService.get_or_create_user_by_github(
-                    db=db,
-                    email=email,
-                    github_id=github_id,
-                    github_login=github_login,
-                    name=name,
-                    avatar_url=avatar_url
-                )
-                
-                # Log audit event
-                await DatabaseService.log_audit_event(
-                    db=db,
-                    action="GITHUB_OAUTH_SUCCESS",
-                    resource="users",
-                    success=True,
-                    user_email=email,
-                    ip_address=client_ip,
-                    user_agent=get_user_agent(request),
-                    meta_data={
-                        "github_id": github_id,
-                        "github_login": github_login,
-                        "is_new_user": created
-                    }
-                )
-                
-                await db.commit()
-                logger.info(f"✅ User {'created' if created else 'updated'} in database: {SecurityUtils.mask_email(email)}")
-        except Exception as db_error:
-            logger.error(f"❌ Database operation failed: {db_error}")
-            # Don't fail the login, just log the error
-        
-        # Generate JWT tokens
+        # === PHASE 4: Token Generation (< 100ms) ===
         access_token = JWTManager.create_access_token({
             "sub": email,
-            "verified": True,
+            "email": email,
+            "user_id": user_uuid,
             "github_id": github_id,
+            "github_login": github_login,
+            "verified": True,
             "provider": "github"
         })
+        
         refresh_token = await JWTManager.create_refresh_token(email)
         
-        # Determine redirect URL
+        # === PHASE 5: Redirect (< 50ms) ===
         redirect_url = oauth_state.redirect_to
         if not redirect_url or redirect_url == "/":
             redirect_url = f"{Config.DASHBOARD_URL}/dashboard"
-        else:
-            if not redirect_url.startswith("http"):
-                redirect_url = f"{Config.DASHBOARD_URL}{redirect_url}"
+        elif not redirect_url.startswith("http"):
+            redirect_url = f"{Config.DASHBOARD_URL}{redirect_url}"
         
-        logger.info(f"Redirecting to: {redirect_url}")
-        
-        # Create response with redirect
         response = RedirectResponse(url=redirect_url, status_code=303)
         
-        # Cookie settings
+        # Set cookies
         is_production = Config.ENVIRONMENT == "production"
         cookie_settings = {
             "httponly": True,
@@ -1280,43 +1570,30 @@ async def github_oauth_callback(
             "path": "/"
         }
         
-        # Set authentication cookies
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            max_age=Config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            **cookie_settings
-        )
+        response.set_cookie("access_token", access_token, 
+                          max_age=Config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60, 
+                          **cookie_settings)
+        response.set_cookie("session_token", access_token,
+                          max_age=Config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+                          **cookie_settings)
+        response.set_cookie("refresh_token", refresh_token,
+                          max_age=Config.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+                          **cookie_settings)
+        response.set_cookie("github_access_token", github_token,
+                          max_age=int(os.getenv("GITHUB_TOKEN_EXPIRE_MINUTES", "480")) * 60,
+                          **cookie_settings)
+        response.set_cookie("user_email", email,
+                          max_age=Config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+                          httponly=False, secure=is_production, 
+                          samesite="lax", path="/")
         
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            max_age=Config.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-            **cookie_settings
-        )
+        total_time = (datetime.utcnow() - start_time).total_seconds()
+        logger.info(f"✅ OAuth completed in {total_time:.2f}s for {SecurityUtils.mask_email(email)}")
         
-        response.set_cookie(
-            key="github_access_token",
-            value=github_token,
-            max_age=int(os.getenv("GITHUB_TOKEN_EXPIRE_MINUTES", "480")) * 60,
-            **cookie_settings
-        )
-        
-        response.set_cookie(
-            key="user_email",
-            value=email,
-            max_age=Config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            httponly=False,
-            secure=is_production,
-            samesite="lax",
-            path="/"
-        )
-        
-        logger.info(f"✅ GitHub OAuth successful for {SecurityUtils.mask_email(email)}")
         return response
         
     except Exception as e:
-        logger.error(f"❌ GitHub callback error: {str(e)}", exc_info=True)
+        logger.error(f"OAuth error: {str(e)}", exc_info=True)
         return RedirectResponse(f"{Config.FRONTEND_URL}/auth?error=server_error")
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -1522,29 +1799,29 @@ async def cleanup_task():
 # ----------------- Lifespan (for standalone mode only) -----------------
 @asynccontextmanager
 async def lifespan(app):
-    """Application lifespan management"""
+    """Application lifespan - ensure HTTP client is closed"""
     # Startup
     logger.info("Starting SecureScan Auth API...")
-    
-    # Initialize database
     await initialize_database()
-    
-    # Initial cleanup of expired data
     await store._cleanup_expired_data()
-    
-    # Start background cleanup task
     cleanup_task_handle = asyncio.create_task(cleanup_task())
     
     yield
     
     # Shutdown
-    logger.info("Shutting down SecureScan Auth API...")
+    logger.info("Shutting down...")
     cleanup_task_handle.cancel()
+    
+    # Close HTTP client
+    global _http_client
+    if _http_client and not _http_client.is_closed:
+        await _http_client.aclose()
+        logger.info("HTTP client closed")
+    
     try:
         await cleanup_task_handle
     except asyncio.CancelledError:
         pass
-
 # ----------------- Export router and store -----------------
 __all__ = ['router', 'store', 'lifespan']
 

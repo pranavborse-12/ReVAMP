@@ -40,3 +40,28 @@ desktop.ini
 
 # Logs
 *.log
+
+# Secrets / runtime data
+*.json
+db_memory.json
+api_key_manager.py
+
+# Test & verification scripts
+test_*.py
+db_*.py
+*_verify_*.py
+
+# Logs & outputs
+*.txt
+output.txt
+
+# Copies
+*Copy.py
+
+# Scripts folder
+scripts/
+
+# Python
+__pycache__/
+.env
+venv/
