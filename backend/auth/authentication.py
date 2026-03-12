@@ -1183,29 +1183,38 @@ def get_user_agent(request: Request) -> str:
     """Get user agent from request"""
     return request.headers.get("User-Agent", "Unknown")[:255]
 
-async def _commit_and_log(db, email, github_id, github_login, user_uuid, 
-                         is_new, ip_address, user_agent):
-    """Background task to commit DB and log audit event"""
+async def _commit_and_log_safe(email, github_id, github_login, user_uuid, 
+                               is_new, ip_address, user_agent):
+    """
+    Background task to log audit event with its OWN database session
+    ✅ FIXED: Creates new session instead of reusing passed session
+    """
+    if not db_config.is_db_available() or not db_config.AsyncSessionLocal:
+        logger.warning("Database not available, skipping audit log")
+        return
+    
     try:
-        await DatabaseService.log_audit_event(
-            db=db,
-            action="GITHUB_OAUTH_SUCCESS",
-            resource="users",
-            success=True,
-            user_email=email,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            meta_data={
-                "github_id": github_id,
-                "github_login": github_login,
-                "is_new_user": is_new,
-                "user_uuid": user_uuid
-            }
-        )
-        await db.commit()
+        # ✅ Create NEW session for background task
+        async with db_config.AsyncSessionLocal() as db:
+            await DatabaseService.log_audit_event(
+                db=db,
+                action="GITHUB_OAUTH_SUCCESS",
+                resource="users",
+                success=True,
+                user_email=email,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                meta_data={
+                    "github_id": github_id,
+                    "github_login": github_login,
+                    "is_new_user": is_new,
+                    "user_uuid": user_uuid
+                }
+            )
+            await db.commit()
+            logger.debug(f"Audit log saved for {email}")
     except Exception as e:
-        logger.error(f"Background commit failed: {e}")
-
+        logger.error(f"Background audit log failed: {e}")
 
 # ----------------- Authentication Dependencies -----------------
 security = HTTPBearer(auto_error=False)
@@ -1484,21 +1493,20 @@ async def github_oauth_callback(
                         db_user = await DatabaseService.get_user_by_email(db, email)
                         
                         if db_user:
-                            # === EXISTING USER PATH - MINIMAL WORK ===
                             user_uuid = str(db_user.id)
-                            
-                            # Only update last_login (single UPDATE query)
                             db_user.last_login = datetime.utcnow()
                             db_user.login_attempts = 0
                             db_user.locked_until = None
-                            
-                            # CRITICAL: Don't wait for commit, fire and forget
-                            asyncio.create_task(_commit_and_log(
-                                db, email, github_id, github_login, 
-                                user_uuid, False, get_client_identifier(request),
-                                get_user_agent(request)
-                            ))
-                            
+                            await db.commit()
+                            asyncio.create_task(_commit_and_log_safe(
+                                email=email,
+                                github_id=github_id,
+                                github_login=github_login,
+                                user_uuid=user_uuid,
+                                is_new=False,
+                                ip_address=get_client_identifier(request),
+                                user_agent=get_user_agent(request)
+                                ))
                         else:
                             # === NEW USER PATH - Full creation ===
                             db_user, created = await DatabaseService.get_or_create_user_by_github(
@@ -1510,12 +1518,17 @@ async def github_oauth_callback(
                                 avatar_url=avatar_url
                             )
                             user_uuid = str(db_user.id)
+                            await db.commit()
                             
-                            # Fire and forget for new users too
-                            asyncio.create_task(_commit_and_log(
-                                db, email, github_id, github_login,
-                                user_uuid, created, get_client_identifier(request),
-                                get_user_agent(request)
+                            # ✅ NEW USER PATH
+                            asyncio.create_task(_commit_and_log_safe(
+                                email=email,
+                                github_id=github_id,
+                                github_login=github_login,
+                                user_uuid=user_uuid,
+                                is_new=created,
+                                ip_address=get_client_identifier(request),
+                                user_agent=get_user_agent(request)
                             ))
                         
                         db_time = (datetime.utcnow() - db_start).total_seconds()

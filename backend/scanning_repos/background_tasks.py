@@ -1,6 +1,8 @@
 """
-Production background scanning with multi-scanner engine
-FIXED: Now properly stores to database via ScanStorageManager
+Production background scanning with FIXED commit tracking
+✅ Properly updates last_scan_commit_sha after successful scans
+✅ Prevents race conditions
+✅ Handles scan allowance correctly
 """
 import os
 import shutil
@@ -17,19 +19,29 @@ from .utils import (
     get_dir_size
 )
 from .scanner_core import VulnerabilityScanner
-from .storage import save_scan_to_db, complete_scan_in_db, update_scan_status_in_db, mark_scan_failed_in_db
+from .storage import (
+    save_scan_to_db, 
+    complete_scan_in_db, 
+    update_scan_status_in_db, 
+    mark_scan_failed_in_db,
+    update_repository_commit_tracking  # NEW: Dedicated function for commit updates
+)
 
-# ─────────────────────────────────────────────────────────────
-# Thread-safe global state (in-memory tracking for backward compatibility)
-# ─────────────────────────────────────────────────────────────
+# Thread-safe global state
 _lock = threading.Lock()
 _scan_results: Dict[str, Dict[str, Any]] = {}
 _active_scans = 0
+_repo_locks: Dict[str, threading.Lock] = {}  # NEW: Per-repository locks
 
 
-# ─────────────────────────────────────────────────────────────
-# Main background scan task - FIXED VERSION WITH DATABASE STORAGE
-# ─────────────────────────────────────────────────────────────
+def get_repo_lock(repo_full_name: str) -> threading.Lock:
+    """Get or create a lock for a specific repository"""
+    with _lock:
+        if repo_full_name not in _repo_locks:
+            _repo_locks[repo_full_name] = threading.Lock()
+        return _repo_locks[repo_full_name]
+
+
 async def perform_scan(
     scan_id: str,
     user_id: str,
@@ -39,20 +51,47 @@ async def perform_scan(
     branch: str,
     semgrep_token: Optional[str],
     scanner_choice: str,
-    max_files: int
+    max_files: int,
+    current_commit_sha: str  # NEW: Pass the commit SHA that was checked
 ):
     """
-    Production scan task with proper database persistence
-    FIXED: Now uses database storage for all state updates
+    Production scan task with FIXED commit tracking
+    ✅ Updates last_scan_commit_sha ONLY after successful completion
+    ✅ Uses repository-level locks to prevent concurrent scans
     """
     global _active_scans
 
+    repo_full_name = f"{repo_owner}/{repo_name}"
     temp_dir = None
     start_time = datetime.now()
+    
+    # ══════════════════════════════════════════════════════════
+    # STEP 0: ACQUIRE REPOSITORY LOCK (Prevent concurrent scans)
+    # ══════════════════════════════════════════════════════════
+    repo_lock = get_repo_lock(repo_full_name)
+    
+    if not repo_lock.acquire(blocking=False):
+        # Another scan is already running for this repo
+        error_msg = f"A scan is already in progress for {repo_full_name}"
+        logger.warning(f"[{scan_id}] {error_msg}")
+        
+        await mark_scan_failed_in_db(
+            scan_id=scan_id,
+            error_message=error_msg,
+            error_code="SCAN_IN_PROGRESS"
+        )
+        
+        with _lock:
+            if scan_id in _scan_results:
+                _scan_results[scan_id].update({
+                    'status': 'failed',
+                    'error_message': error_msg,
+                    'completed_at': datetime.now().isoformat()
+                })
+        return
 
     try:
-        logger.info(f"[{scan_id}] 🚀 Starting scan for {repo_owner}/{repo_name}")
-        logger.info(f"[{scan_id}] User: {user_id}, Branch: {branch}, Scanner: {scanner_choice}")
+        logger.info(f"[{scan_id}] 🔒 Repository lock acquired for {repo_full_name}")
         
         # ══════════════════════════════════════════════════════════
         # STEP 1: INITIALIZE IN DATABASE
@@ -63,7 +102,8 @@ async def perform_scan(
             repo_owner=repo_owner,
             repo_name=repo_name,
             branch=branch,
-            scanner_mode=scanner_choice
+            scanner_mode=scanner_choice,
+            commit_sha=current_commit_sha  # Store the commit SHA we're scanning
         )
         
         if db_saved:
@@ -71,7 +111,7 @@ async def perform_scan(
         else:
             logger.warning(f"[{scan_id}] ⚠️ Database save failed, using memory only")
         
-        # Also update in-memory state for backward compatibility
+        # Update in-memory state
         with _lock:
             _active_scans += 1
             _scan_results[scan_id] = {
@@ -90,11 +130,12 @@ async def perform_scan(
                 'scan_duration': None,
                 'repo_size_mb': None,
                 'started_at': start_time.isoformat(),
-                'completed_at': None
+                'completed_at': None,
+                'commit_sha': current_commit_sha
             }
 
         # ══════════════════════════════════════════════════════════
-        # STEP 2: UPDATE STATUS - CLONING
+        # STEP 2: CLONE REPOSITORY
         # ══════════════════════════════════════════════════════════
         await update_scan_status_in_db(scan_id, 'cloning', started_at=start_time)
         
@@ -103,7 +144,6 @@ async def perform_scan(
         
         logger.info(f"[{scan_id}] 📥 Cloning repository...")
 
-        # Clone repository
         temp_dir = tempfile.mkdtemp(prefix="scanner_")
         success, message = await clone_github_repo(
             github_token,
@@ -116,7 +156,6 @@ async def perform_scan(
         if not success:
             raise RuntimeError(f"Clone failed: {message}")
 
-        # Size validation
         repo_size_mb = get_dir_size(temp_dir) / (1024 * 1024)
         if repo_size_mb > MAX_REPO_SIZE_MB:
             raise RuntimeError(
@@ -127,19 +166,18 @@ async def perform_scan(
         logger.info(f"[{scan_id}] ✅ Repository cloned ({repo_size_mb:.2f} MB)")
 
         # ══════════════════════════════════════════════════════════
-        # STEP 3: UPDATE STATUS - ANALYZING
+        # STEP 3: ANALYZE LANGUAGES
         # ══════════════════════════════════════════════════════════
         await update_scan_status_in_db(scan_id, 'analyzing')
         
         with _lock:
             _scan_results[scan_id]['status'] = 'analyzing'
 
-        # Detect languages
         languages = detect_languages(temp_dir, max_files=max_files)
         logger.info(f"[{scan_id}] 🔍 Languages detected: {languages}")
 
         # ══════════════════════════════════════════════════════════
-        # STEP 4: UPDATE STATUS - SCANNING
+        # STEP 4: SCAN FOR VULNERABILITIES
         # ══════════════════════════════════════════════════════════
         await update_scan_status_in_db(scan_id, 'scanning')
         
@@ -148,11 +186,9 @@ async def perform_scan(
         
         logger.info(f"[{scan_id}] 🔎 Running vulnerability scanner...")
 
-        # Run vulnerability scanner
         scanner = VulnerabilityScanner(temp_dir, languages)
         vulnerabilities, error_msg = scanner.scan(use_cache=False)
 
-        # Calculate results
         severity = calculate_severity_summary(vulnerabilities)
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
@@ -170,7 +206,7 @@ async def perform_scan(
         logger.info(f"[{scan_id}] 📊 Severity: {severity.critical}C/{severity.high}H/{severity.medium}M/{severity.low}L")
 
         # ══════════════════════════════════════════════════════════
-        # STEP 5: SAVE TO DATABASE - CRITICAL PART
+        # STEP 5: SAVE TO DATABASE (ATOMIC TRANSACTION)
         # ══════════════════════════════════════════════════════════
         logger.info(f"[{scan_id}] 💾 Saving results to database...")
         
@@ -186,6 +222,33 @@ async def perform_scan(
         
         if db_completed:
             logger.info(f"[{scan_id}] ✅ Results saved to database successfully")
+            
+            # ══════════════════════════════════════════════════════════
+            # STEP 6: UPDATE COMMIT TRACKING (CRITICAL FIX)
+            # ══════════════════════════════════════════════════════════
+            # This must happen AFTER the scan completes successfully
+            try:
+                commit_updated = await update_repository_commit_tracking(
+                    user_id=user_id,
+                    repo_owner=repo_owner,
+                    repo_name=repo_name,
+                    commit_sha=current_commit_sha,
+                    consume_allowance=True  # Consume one scan from allowance
+                )
+                
+                if commit_updated:
+                    logger.info(
+                        f"[{scan_id}] ✅ Updated last_scan_commit_sha to {current_commit_sha[:7]}"
+                    )
+                else:
+                    logger.warning(
+                        f"[{scan_id}] ⚠️ Failed to update commit tracking"
+                    )
+            except Exception as commit_err:
+                logger.error(
+                    f"[{scan_id}] ❌ Commit tracking update failed: {commit_err}",
+                    exc_info=True
+                )
         else:
             logger.warning(f"[{scan_id}] ⚠️ Database save failed, results in memory only")
 
@@ -210,14 +273,12 @@ async def perform_scan(
         error_msg = f"Scan failed: {str(e)}"
         logger.error(f"[{scan_id}] ❌ {error_msg}", exc_info=True)
 
-        # Mark as failed in database
         await mark_scan_failed_in_db(
             scan_id=scan_id,
             error_message=error_msg,
             error_code="SCAN_ERROR"
         )
 
-        # Update in-memory state
         with _lock:
             if scan_id in _scan_results:
                 _scan_results[scan_id].update({
@@ -227,26 +288,36 @@ async def perform_scan(
                 })
 
     finally:
+        # ══════════════════════════════════════════════════════════
+        # CLEANUP: Release lock and clean temp directory
+        # ══════════════════════════════════════════════════════════
         with _lock:
             _active_scans = max(0, _active_scans - 1)
+        
+        # Release repository lock
+        repo_lock.release()
+        logger.info(f"[{scan_id}] 🔓 Repository lock released for {repo_full_name}")
 
         if temp_dir and os.path.exists(temp_dir):
-            try:
-                shutil.rmtree(temp_dir)
-                logger.info(f"[{scan_id}] 🧹 Temp directory cleaned")
-            except Exception as e:
-                logger.error(f"[{scan_id}] ⚠️ Cleanup error: {e}")
+            VulnerabilityScanner.remove_temp_dir(temp_dir)
+            logger.info(f"[{scan_id}] 🧹 Temp directory cleaned")
 
 
 # ─────────────────────────────────────────────────────────────
 # Public helpers (maintain backward compatibility)
 # ─────────────────────────────────────────────────────────────
 
-def initialize_scan(scan_id: str, repo_owner: str, repo_name: str, user_id: Optional[str] = None) -> None:
-    """Create in-memory entry for a new scan (for backward compatibility)"""
+def initialize_scan(
+    scan_id: str, 
+    repo_owner: str, 
+    repo_name: str, 
+    user_id: Optional[str] = None, 
+    branch: str = "main"
+) -> None:
+    """Create in-memory entry for a new scan"""
     with _lock:
         if scan_id in _scan_results:
-            logger.warning(f"[{scan_id}] initialize_scan called but scan already exists")
+            logger.warning(f"[{scan_id}] Scan already exists")
             return
 
         _scan_results[scan_id] = {
@@ -266,7 +337,8 @@ def initialize_scan(scan_id: str, repo_owner: str, repo_name: str, user_id: Opti
             'repo_size_mb': None,
             'started_at': None,
             'completed_at': None,
-            'queued_at': datetime.utcnow().isoformat()
+            'queued_at': datetime.utcnow().isoformat(),
+            'branch': branch
         }
         logger.info(f"[{scan_id}] Initialized in-memory state")
 

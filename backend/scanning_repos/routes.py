@@ -94,7 +94,7 @@ async def check_scan_eligibility(
 ):
     """
     Check if repository can be scanned
-    ✅ FIXED: Always returns proper JSON, never crashes
+    ✅ FIXED: Returns accurate eligibility without modifying database state
     """
     try:
         github_token = request.cookies.get("github_access_token")
@@ -103,18 +103,17 @@ async def check_scan_eligibility(
         
         user_id = await get_user_id(request)
         
-        # ✅ STEP 1: Fetch latest commit from GitHub (with error handling)
+        # STEP 1: Fetch latest commit from GitHub
         latest_commit = await CommitTracker.get_latest_commit(
             github_token, owner, repo, branch
         )
         
-        # ✅ FIXED: Handle GitHub API failure gracefully
+        # Handle GitHub API failure gracefully
         if not latest_commit:
             logger.warning(
                 f"⚠️ Could not fetch commits for {owner}/{repo}@{branch}. "
                 f"Allowing scan anyway (first-time or API issue)."
             )
-            # Return safe default response
             return {
                 "eligible": True,
                 "reason": "Unable to verify commits - allowing scan",
@@ -127,11 +126,10 @@ async def check_scan_eligibility(
                 "last_scanned_commit": None
             }
         
-        # ✅ STEP 2: Get repository from database
+        # STEP 2: Get repository from database
         from backend.database import config as db_config
         from backend.database.scan_models import Repository
         
-        # ✅ FIXED: Check database availability
         if not db_config.is_db_available() or not db_config.AsyncSessionLocal:
             logger.warning("Database not available, allowing scan")
             return {
@@ -156,7 +154,7 @@ async def check_scan_eligibility(
             )
             repository = result.scalar_one_or_none()
             
-            # ✅ CASE 1: Repository not in database (first scan)
+            # CASE 1: Repository not in database (first scan)
             if not repository:
                 logger.info(f"✅ First scan for {owner}/{repo}")
                 return {
@@ -171,13 +169,12 @@ async def check_scan_eligibility(
                     "last_scanned_commit": None
                 }
             
-            # ✅ STEP 3: Check eligibility with database record
-            is_eligible, reason, remaining = await CommitTracker.check_scan_eligibility(
+            # STEP 3: Check eligibility (this does NOT modify database)
+            is_eligible, reason, remaining, has_new_commits = await CommitTracker.check_scan_eligibility(
                 db, str(repository.id), latest_commit["sha"]
             )
             
-            # ✅ STEP 4: Get commit comparison (if we have history)
-            has_new_commits = False
+            # STEP 4: Get commit comparison
             new_commits_count = 0
             last_scanned = None
             
@@ -190,38 +187,177 @@ async def check_scan_eligibility(
                         github_token, owner, repo,
                         repository.last_scan_commit_sha, branch
                     )
-                    has_new_commits = len(new_commits) > 0
                     new_commits_count = len(new_commits)
             
-            # ✅ FIXED: Always return consistent response structure
             return {
                 "eligible": is_eligible,
                 "reason": reason,
-                "remaining_scans": remaining,
+                "remaining_scans": remaining if not has_new_commits else CommitTracker.INITIAL_SCAN_ALLOWANCE,
                 "latest_commit": latest_commit["sha"][:7],
                 "commit_message": latest_commit["message"][:100],
-                "last_scanned_commit": last_scanned,
+                "is_first_scan": repository.last_scan_commit_sha is None,
                 "has_new_commits": has_new_commits,
                 "new_commits_count": new_commits_count,
-                "is_first_scan": False
+                "last_scanned_commit": last_scanned
             }
             
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Eligibility check error for {owner}/{repo}: {e}", exc_info=True)
-        # ✅ FIXED: Return safe fallback instead of 500 error
+        logger.error(f"Eligibility check failed: {e}", exc_info=True)
+        # Fail open - allow scan if we can't check
         return {
-            "eligible": True,  # Allow scan on error
-            "reason": f"Error checking eligibility - allowing scan",
+            "eligible": True,
+            "reason": f"Eligibility check failed: {str(e)}",
             "remaining_scans": CommitTracker.INITIAL_SCAN_ALLOWANCE,
-            "latest_commit": "unknown",
-            "commit_message": "Error fetching commit info",
+            "latest_commit": "error",
+            "commit_message": "Error checking commits",
             "is_first_scan": True,
             "has_new_commits": False,
             "new_commits_count": 0,
             "last_scanned_commit": None
         }
+
+
+@router.post("/repos/{owner}/{repo}/scan")
+async def start_scan(
+    owner: str,
+    repo: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    branch: Optional[str] = "main",
+    force: bool = False
+):
+    """
+    Start vulnerability scan.
+    
+    FIX: We now call initialize_scan() to pre-populate _scan_results in memory
+    BEFORE add_task() is called. This ensures the very first status poll 
+    (which fires ~10ms after the response is sent) always finds the scan entry
+    and never gets a 404 that would cause the frontend to show "Scan Failed".
+    """
+    try:
+        github_token = request.cookies.get("github_access_token")
+        if not github_token:
+            raise HTTPException(status_code=401, detail="GitHub token required")
+        
+        user_id = await get_user_id(request)
+        
+        # STEP 1: Fetch latest commit
+        latest_commit = await CommitTracker.get_latest_commit(
+            github_token, owner, repo, branch
+        )
+        
+        if not latest_commit:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not fetch repository commit information"
+            )
+        
+        current_commit_sha = latest_commit["sha"]
+        
+        # STEP 2: Get or create repository in database
+        from backend.database import config as db_config
+        from backend.database.scan_models import Repository
+        
+        if not db_config.is_db_available() or not db_config.AsyncSessionLocal:
+            raise HTTPException(
+                status_code=503,
+                detail="Database not available"
+            )
+        
+        async with db_config.AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Repository).where(
+                    Repository.user_id == user_id,
+                    Repository.owner == owner,
+                    Repository.name == repo
+                )
+            )
+            repository = result.scalar_one_or_none()
+            
+            # Create repository if it doesn't exist
+            if not repository:
+                from backend.database.scan_service import ScanService
+                repository = await ScanService.get_or_create_repository(
+                    db=db,
+                    user_id=user_id,
+                    owner=owner,
+                    repo_name=repo,
+                    github_url=f"https://github.com/{owner}/{repo}",
+                    default_branch=branch
+                )
+                await db.commit()
+                await db.refresh(repository)
+                logger.info(f"✅ Created new repository record for {owner}/{repo}")
+            
+            # STEP 3: Check eligibility (unless forced)
+            if not force:
+                is_eligible, reason, remaining, has_new_commits = await CommitTracker.check_scan_eligibility(
+                    db, str(repository.id), current_commit_sha
+                )
+                
+                if not is_eligible:
+                    raise HTTPException(status_code=403, detail=reason)
+                
+                # Reset allowance if new commits detected
+                if has_new_commits:
+                    await CommitTracker.reset_allowance_for_new_commits(
+                        db, str(repository.id), current_commit_sha
+                    )
+                    logger.info(f"✅ Allowance reset for new commits in {owner}/{repo}")
+        
+        # STEP 4: Generate scan ID
+        scan_id = str(uuid.uuid4())
+        semgrep_token = get_semgrep_token(SEMGREP_APP_TOKEN)
+        
+        logger.info(
+            f"[{scan_id}] Starting scan for {owner}/{repo}@{branch} "
+            f"(commit: {current_commit_sha[:7]})"
+        )
+
+        # ─────────────────────────────────────────────────────────────────
+        # FIX: Pre-populate in-memory state BEFORE launching the background
+        # task. The frontend polls /scans/{scan_id}/status immediately after
+        # receiving the scan_id. Without this, the background task may not
+        # have run yet, _scan_results won't contain the entry, the status
+        # endpoint returns 404, and the frontend shows "Scan Failed".
+        # initialize_scan() is synchronous and safe to call here.
+        # ─────────────────────────────────────────────────────────────────
+        initialize_scan(
+            scan_id=scan_id,
+            repo_owner=owner,
+            repo_name=repo,
+            user_id=user_id,
+            branch=branch
+        )
+        logger.info(f"[{scan_id}] ✅ In-memory state pre-populated before background task")
+
+        # STEP 5: Launch background scan task
+        background_tasks.add_task(
+            perform_scan,
+            scan_id=scan_id,
+            user_id=user_id,
+            github_token=github_token,
+            repo_owner=owner,
+            repo_name=repo,
+            branch=branch,
+            semgrep_token=semgrep_token,
+            scanner_choice="semgrep",
+            max_files=1000,
+            current_commit_sha=current_commit_sha
+        )
+        
+        return {
+            "scan_id": scan_id,
+            "status": "queued",
+            "message": f"Scan initiated for {owner}/{repo}",
+            "commit_sha": current_commit_sha[:7]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to start scan: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/scans/{scan_id}")
 async def get_scan_result_endpoint(scan_id: str):
@@ -480,10 +616,14 @@ async def get_dashboard_stats(request: Request):
         from backend.database.scan_models import ScanHistory, Repository
         
         if not db_config.is_db_available() or not db_config.AsyncSessionLocal:
-            return {"stats": {...}}  # empty
+            return {"stats": {
+                "totalRepos": 0, "totalScans": 0,
+                "criticalVulns": 0, "highVulns": 0,
+                "mediumVulns": 0, "lowVulns": 0,
+                "filesScanned": 0, "recentAlerts": 0
+            }}
         
         async with db_config.AsyncSessionLocal() as db:
-            # Get LATEST scan per repository (not sum of all scans!)
             latest_scans_subquery = (
                 select(
                     ScanHistory.repository_id,
@@ -495,7 +635,6 @@ async def get_dashboard_stats(request: Request):
                 .subquery()
             )
             
-            # Get actual latest scans
             latest_scans_result = await db.execute(
                 select(ScanHistory)
                 .join(
@@ -505,7 +644,6 @@ async def get_dashboard_stats(request: Request):
                 )
             )
             
-            # Calculate CURRENT state (not cumulative!)
             total_critical = 0
             total_high = 0
             total_medium = 0
@@ -519,36 +657,37 @@ async def get_dashboard_stats(request: Request):
                 total_low += scan.low_count or 0
                 total_files += scan.files_scanned or 0
             
-            # Total repositories
             repos_count = await db.execute(
                 select(func.count(Repository.id)).where(Repository.user_id == user_id)
             )
             total_repos = repos_count.scalar() or 0
             
-            # Total scans ever performed
             scans_count = await db.execute(
                 select(func.count(ScanHistory.id)).where(ScanHistory.user_id == user_id)
             )
             total_scans = scans_count.scalar() or 0
             
-            logger.info(f"📊 REAL-TIME Dashboard: {total_repos} repos, {total_files} files, {total_critical} critical")
-            
             return {
                 "stats": {
                     "totalRepos": total_repos,
                     "totalScans": total_scans,
-                    "criticalVulns": total_critical,  # CURRENT state
+                    "criticalVulns": total_critical,
                     "highVulns": total_high,
                     "mediumVulns": total_medium,
                     "lowVulns": total_low,
-                    "filesScanned": total_files,  # ACTUAL files
+                    "filesScanned": total_files,
                     "recentAlerts": total_critical + total_high
                 }
             }
             
     except Exception as e:
         logger.error(f"Dashboard error: {e}", exc_info=True)
-        return {"stats": {...}}
+        return {"stats": {
+            "totalRepos": 0, "totalScans": 0,
+            "criticalVulns": 0, "highVulns": 0,
+            "mediumVulns": 0, "lowVulns": 0,
+            "filesScanned": 0, "recentAlerts": 0
+        }}
 
 @router.get("/dashboard/trends")
 async def get_vulnerability_trends(request: Request, days: int = 7):
@@ -567,7 +706,6 @@ async def get_vulnerability_trends(request: Request, days: int = 7):
         async with db_config.AsyncSessionLocal() as db:
             cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
             
-            # Get scans grouped by day
             scans = await db.execute(
                 select(
                     func.date_trunc('day', ScanHistory.completed_at).label('day'),
@@ -582,7 +720,7 @@ async def get_vulnerability_trends(request: Request, days: int = 7):
                         ScanHistory.completed_at >= cutoff_date
                     )
                 )
-                .group_by('day')  
+                .group_by('day')
                 .order_by('day')
             )
             
@@ -595,12 +733,10 @@ async def get_vulnerability_trends(request: Request, days: int = 7):
                     "medium": int(row.medium or 0)
                 })
             
-            # If no trends data, generate empty week
             if len(trends) == 0:
-                days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-                trends = [{"name": day, "critical": 0, "high": 0, "medium": 0} for day in days]
+                day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                trends = [{"name": d, "critical": 0, "high": 0, "medium": 0} for d in day_names]
             
-            logger.info(f"📈 Trends: {len(trends)} days of data")
             return {"trends": trends}
             
     except Exception as e:
@@ -662,7 +798,6 @@ async def get_vulnerable_files(request: Request, limit: int = 10):
         from backend.database.scan_models import Vulnerability, ScanHistory
         
         async with db_config.AsyncSessionLocal() as db:
-            # Get critical and high severity vulnerabilities
             vulns = await db.execute(
                 select(Vulnerability)
                 .join(ScanHistory, Vulnerability.scan_id == ScanHistory.id)

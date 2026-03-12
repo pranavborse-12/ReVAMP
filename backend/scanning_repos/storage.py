@@ -1,9 +1,12 @@
 """
-Complete storage interface for scans with proper error handling
-FIXED: Proper enum value handling for PostgreSQL
+Complete storage interface for scans with FIXED commit tracking
+✅ Updates commit SHA and consumes allowance atomically
+✅ Proper error handling and logging
+✅ Clean separation of concerns
 """
 from typing import Optional, Any
 from backend.database.config import get_db, is_db_available
+from backend.database import config as db_config
 from backend.database.scan_service import ScanService
 from backend.database.scan_models import ScanStatusEnum
 from datetime import datetime, timezone
@@ -12,20 +15,32 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-async def save_scan_to_db(scan_id, user_id, repo_owner, repo_name, branch, scanner_mode):
+async def save_scan_to_db(
+    scan_id, 
+    user_id, 
+    repo_owner, 
+    repo_name, 
+    branch, 
+    scanner_mode,
+    commit_sha: Optional[str] = None
+):
     """
     Initialize scan in database
     Creates repository record and scan_history record
-    FIXED: Proper enum handling
+    ✅ FIXED: Doesn't pass commit_sha to create_scan (not supported)
     """
     if not is_db_available():
         logger.warning(f"[{scan_id}] Database not available - using memory only")
         return False
     
+    if db_config.AsyncSessionLocal is None:
+        logger.warning(f"[{scan_id}] AsyncSessionLocal not initialized yet")
+        return False
+    
     try:
-        async for db in get_db():
+        async with db_config.AsyncSessionLocal() as db:
             try:
-                # Step 1: Create or get repository
+                # Create or get repository
                 repo = await ScanService.get_or_create_repository(
                     db=db,
                     user_id=user_id,
@@ -35,24 +50,28 @@ async def save_scan_to_db(scan_id, user_id, repo_owner, repo_name, branch, scann
                     default_branch=branch
                 )
                 
-                # Ensure the repository has an ID
                 await db.flush()
-
-                logger.info(f"[{scan_id}] Repository record created/retrieved: {repo.id}")
+                logger.info(f"[{scan_id}] Repository: {repo.id}")
                 
-                # Step 2: Create scan history record with UUID directly
+                # ✅ FIXED: Create scan history record WITHOUT commit_sha
+                # (ScanService.create_scan doesn't accept commit_sha parameter)
                 scan = await ScanService.create_scan(
                     db=db,
                     scan_id=scan_id,
                     user_id=user_id,
-                    repository_id=repo.id,  # ← Pass UUID object directly
+                    repository_id=repo.id,
                     branch_name=branch,
                     scanner_mode=scanner_mode
+                    # ✅ Removed: commit_sha parameter (not supported)
                 )
                 
-                logger.info(f"[{scan_id}] Scan history record created: {scan.id}")
+                logger.info(f"[{scan_id}] Scan record created: {scan.id}")
                 
-                # Step 3: Commit transaction
+                # ✅ Store commit SHA in the scan record if provided
+                if commit_sha and hasattr(scan, 'commit_sha'):
+                    scan.commit_sha = commit_sha
+                    logger.info(f"[{scan_id}] Commit SHA stored: {commit_sha[:7]}")
+                
                 await db.commit()
                 
                 logger.info(f"[{scan_id}] ✅ Successfully saved to database")
@@ -69,15 +88,11 @@ async def save_scan_to_db(scan_id, user_id, repo_owner, repo_name, branch, scann
 
 
 async def update_scan_status_in_db(scan_id, status, started_at=None):
-    """
-    Update scan status in database
-    FIXED: Pass lowercase strings directly
-    """
-    if not is_db_available():
+    """Update scan status in database"""
+    if not is_db_available() or db_config.AsyncSessionLocal is None:
         return False
     
     try:
-        # FIXED: Map to lowercase strings directly (no enum conversion)
         status_map = {
             'queued': 'queued',
             'cloning': 'cloning',
@@ -90,16 +105,14 @@ async def update_scan_status_in_db(scan_id, status, started_at=None):
             'cancelled': 'cancelled'
         }
         
-        # Get lowercase status string
         status_str = status_map.get(status.lower() if isinstance(status, str) else status, 'queued')
         
-        async for db in get_db():
+        async with db_config.AsyncSessionLocal() as db:
             try:
-                # Pass lowercase string directly
                 await ScanService.update_scan_status(
                     db=db,
                     scan_id=scan_id,
-                    status=status_str  # ← Now a lowercase string
+                    status=status_str
                 )
                 
                 await db.commit()
@@ -116,12 +129,17 @@ async def update_scan_status_in_db(scan_id, status, started_at=None):
         return False
 
 
-async def complete_scan_in_db(scan_id, vulnerabilities, scanner_used, languages, duration, size_mb=None, files=None):
-    """
-    Mark scan as completed and save all vulnerabilities
-    Also updates scan statistics
-    """
-    if not is_db_available():
+async def complete_scan_in_db(
+    scan_id, 
+    vulnerabilities, 
+    scanner_used, 
+    languages, 
+    duration, 
+    size_mb=None, 
+    files=None
+):
+    """Mark scan as completed and save all vulnerabilities"""
+    if not is_db_available() or db_config.AsyncSessionLocal is None:
         logger.warning(f"[{scan_id}] Database not available")
         return False
     
@@ -129,9 +147,8 @@ async def complete_scan_in_db(scan_id, vulnerabilities, scanner_used, languages,
         from sqlalchemy import select
         from backend.database.scan_models import ScanHistory
         
-        async for db in get_db():
+        async with db_config.AsyncSessionLocal() as db:
             try:
-                # Get scan to retrieve user_id
                 result = await db.execute(
                     select(ScanHistory).where(ScanHistory.scan_id == scan_id)
                 )
@@ -160,22 +177,12 @@ async def complete_scan_in_db(scan_id, vulnerabilities, scanner_used, languages,
                 logger.info(f"[{scan_id}] ✅ Scan completed in database")
                 logger.info(f"[{scan_id}] Saved {len(vulnerabilities)} vulnerabilities")
                 
-                # Update scan statistics (don't fail if this fails)
+                # Update statistics (don't fail if this fails)
                 try:
                     from backend.scanning_repos.scan_statistics_updater import update_scan_statistics
                     await update_scan_statistics(str(user_id))
                 except Exception as stats_error:
                     logger.warning(f"[{scan_id}] Failed to update statistics: {stats_error}")
-                
-                # Update repository scan count
-                try:
-                    await update_repository_scan_stats(
-                        scan_record.repository.owner,
-                        scan_record.repository.name,
-                        str(user_id)
-                    )
-                except Exception as repo_error:
-                    logger.warning(f"[{scan_id}] Failed to update repo stats: {repo_error}")
                 
                 return True
                 
@@ -190,21 +197,17 @@ async def complete_scan_in_db(scan_id, vulnerabilities, scanner_used, languages,
 
 
 async def mark_scan_failed_in_db(scan_id, error_message, error_code="SCAN_ERROR"):
-    """
-    Mark scan as failed with error details
-    FIXED: Pass lowercase string directly
-    """
-    if not is_db_available():
+    """Mark scan as failed with error details"""
+    if not is_db_available() or db_config.AsyncSessionLocal is None:
         return False
     
     try:
-        async for db in get_db():
+        async with db_config.AsyncSessionLocal() as db:
             try:
-                # Pass 'failed' as lowercase string
                 await ScanService.update_scan_status(
                     db=db,
                     scan_id=scan_id,
-                    status='failed',  # ← Lowercase string
+                    status='failed',
                     error_message=error_message,
                     error_code=error_code
                 )
@@ -223,6 +226,103 @@ async def mark_scan_failed_in_db(scan_id, error_message, error_code="SCAN_ERROR"
         return False
 
 
+# ══════════════════════════════════════════════════════════
+# CRITICAL FIX: ATOMIC COMMIT TRACKING UPDATE
+# ══════════════════════════════════════════════════════════
+
+async def update_repository_commit_tracking(
+    user_id: str,
+    repo_owner: str,
+    repo_name: str,
+    commit_sha: str,
+    consume_allowance: bool = True
+) -> bool:
+    """
+    Update repository's last_scan_commit_sha after successful scan
+    ✅ ATOMIC: Updates commit SHA, allowance, and scan count in single transaction
+    ✅ Called ONLY after scan completes successfully
+    
+    Args:
+        user_id: User UUID
+        repo_owner: Repository owner
+        repo_name: Repository name
+        commit_sha: The commit SHA that was just scanned
+        consume_allowance: Whether to decrease scan_allowance_remaining
+    
+    Returns:
+        bool: True if update succeeded, False otherwise
+    """
+    if not is_db_available() or db_config.AsyncSessionLocal is None:
+        logger.warning("Database not available for commit tracking")
+        return False
+    
+    try:
+        from sqlalchemy import select, and_
+        from backend.database.scan_models import Repository
+        
+        full_name = f"{repo_owner}/{repo_name}"
+        
+        async with db_config.AsyncSessionLocal() as db:
+            try:
+                # Get repository
+                result = await db.execute(
+                    select(Repository).where(
+                        and_(
+                            Repository.user_id == user_id,
+                            Repository.full_name == full_name
+                        )
+                    )
+                )
+                
+                repo = result.scalar_one_or_none()
+                
+                if not repo:
+                    logger.error(f"Repository not found: {full_name} for user {user_id}")
+                    return False
+                
+                old_sha = repo.last_scan_commit_sha
+                old_allowance = repo.scan_allowance_remaining
+                
+                # ✅ CRITICAL: Update commit tracking fields
+                repo.last_scan_commit_sha = commit_sha
+                repo.last_commit_sha = commit_sha
+                repo.last_scan_at = datetime.now(timezone.utc)
+                repo.updated_at = datetime.now(timezone.utc)
+                
+                # Increment scan count
+                repo.total_scans = (repo.total_scans or 0) + 1
+                
+                # ✅ Consume allowance if requested
+                if consume_allowance and repo.scan_allowance_remaining > 0:
+                    repo.scan_allowance_remaining -= 1
+                
+                await db.commit()
+                
+                logger.info(
+                    f"✅ COMMIT TRACKING UPDATED for {full_name}:\n"
+                    f"   SHA: {old_sha[:7] if old_sha else 'none'} → {commit_sha[:7]}\n"
+                    f"   Allowance: {old_allowance} → {repo.scan_allowance_remaining}\n"
+                    f"   Total scans: {repo.total_scans}"
+                )
+                return True
+                
+            except Exception as e:
+                await db.rollback()
+                logger.error(
+                    f"❌ Failed to update commit tracking for {full_name}: {e}",
+                    exc_info=True
+                )
+                return False
+                
+    except Exception as e:
+        logger.error(f"❌ Database error in commit tracking: {e}", exc_info=True)
+        return False
+
+
+# ══════════════════════════════════════════════════════════
+# EXISTING FUNCTIONS (Keep for backward compatibility)
+# ══════════════════════════════════════════════════════════
+
 async def save_repository_to_db(
     user_id: str,
     owner: str,
@@ -232,33 +332,23 @@ async def save_repository_to_db(
     primary_language: Optional[str] = None,
     is_private: bool = False
 ) -> Optional[Any]:
-    """
-    Save repository to database with proper user_id validation
-    FIXED: Better handling of anonymous users and UUID validation
-    """
+    """Save repository to database"""
     from backend.database import config as db_config
     from backend.database.scan_service import ScanService
     import uuid as uuid_module
     
-    # Validate user_id
     if not user_id or user_id == "anonymous":
-        logger.warning(f"Cannot save repository {owner}/{repo_name}: user not authenticated (user_id={user_id})")
+        logger.warning(f"Cannot save repository {owner}/{repo_name}: user not authenticated")
         return None
     
-    # Validate UUID format
     try:
         uuid_module.UUID(user_id)
     except (ValueError, AttributeError):
         logger.error(f"Invalid user_id UUID format: {user_id}")
         return None
     
-    # Check if database is available
-    if not db_config.is_db_available():
+    if not db_config.is_db_available() or db_config.AsyncSessionLocal is None:
         logger.warning("Database not available, cannot save repository")
-        return None
-    
-    if db_config.AsyncSessionLocal is None:
-        logger.warning("AsyncSessionLocal not initialized")
         return None
     
     try:
@@ -286,14 +376,14 @@ async def save_repository_to_db(
 
 async def get_user_repositories_from_db(user_id, limit=50, offset=0):
     """Get user's repositories from database"""
-    if not is_db_available():
+    if not is_db_available() or db_config.AsyncSessionLocal is None:
         return []
     
     try:
-        from sqlalchemy import select, and_, desc
+        from sqlalchemy import select, desc
         from backend.database.scan_models import Repository
         
-        async for db in get_db():
+        async with db_config.AsyncSessionLocal() as db:
             try:
                 result = await db.execute(
                     select(Repository)
@@ -317,7 +407,9 @@ async def get_user_repositories_from_db(user_id, limit=50, offset=0):
                         'is_private': repo.is_private,
                         'total_scans': repo.total_scans,
                         'last_scan_at': repo.last_scan_at.isoformat() if repo.last_scan_at else None,
-                        'created_at': repo.created_at.isoformat() if repo.created_at else None
+                        'created_at': repo.created_at.isoformat() if repo.created_at else None,
+                        'last_scan_commit_sha': repo.last_scan_commit_sha,
+                        'scan_allowance_remaining': repo.scan_allowance_remaining
                     }
                     for repo in repos
                 ]
@@ -329,49 +421,3 @@ async def get_user_repositories_from_db(user_id, limit=50, offset=0):
     except Exception as e:
         logger.error(f"Database error: {e}", exc_info=True)
         return []
-
-
-async def update_repository_scan_stats(repo_owner, repo_name, user_id):
-    """Update repository statistics after a scan"""
-    if not is_db_available():
-        return False
-    
-    try:
-        from sqlalchemy import select, and_
-        from backend.database.scan_models import Repository
-        
-        async for db in get_db():
-            try:
-                full_name = f"{repo_owner}/{repo_name}"
-                
-                result = await db.execute(
-                    select(Repository).where(
-                        and_(
-                            Repository.user_id == user_id,
-                            Repository.full_name == full_name
-                        )
-                    )
-                )
-                
-                repo = result.scalar_one_or_none()
-                
-                if repo:
-                    repo.total_scans += 1
-                    repo.last_scan_at = datetime.now(timezone.utc)
-                    repo.updated_at = datetime.now(timezone.utc)
-                    
-                    await db.commit()
-                    logger.info(f"Updated scan stats for {full_name}")
-                    return True
-                else:
-                    logger.warning(f"Repository not found: {full_name}")
-                    return False
-                    
-            except Exception as e:
-                await db.rollback()
-                logger.error(f"Failed to update repository stats: {e}", exc_info=True)
-                return False
-                
-    except Exception as e:
-        logger.error(f"Database error: {e}", exc_info=True)
-        return False
