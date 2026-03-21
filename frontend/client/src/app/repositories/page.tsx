@@ -788,6 +788,8 @@ export default function RepositoriesPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [repos, setRepos] = useState<Repo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reposLoading, setReposLoading] = useState(false);
+  const [reposLoaded, setReposLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -810,25 +812,36 @@ export default function RepositoriesPage() {
   const removeToast = useCallback((id: number) => setToasts(prev => prev.filter(t => t.id !== id)), []);
 
   useEffect(() => {
-    const init = async () => {
+    const initProfile = async () => {
       setLoading(true);
       try {
         const pRes = await fetch(`${API_BASE_URL}/api/github/profile`, { credentials: "include" });
         if (pRes.status === 401) { setError("auth"); return; }
         setProfile(await pRes.json());
-
-        const rRes = await fetch(`${API_BASE_URL}/api/github/repos?sort=updated&per_page=50`, { credentials: "include" });
-        if (!rRes.ok) throw new Error("Failed to load repositories");
-        const rData = await rRes.json();
-        setRepos(Array.isArray(rData) ? rData : (rData.repositories || []));
       } catch {
-        setError("Failed to load data");
+        setError("Failed to load profile");
       } finally {
         setLoading(false);
       }
     };
-    init();
+    initProfile();
   }, []);
+
+  const loadRepos = useCallback(async () => {
+    if (reposLoading) return;
+    setReposLoading(true);
+    try {
+      const rRes = await fetch(`${API_BASE_URL}/api/github/repos?sort=updated&per_page=50`, { credentials: "include" });
+      if (!rRes.ok) throw new Error("Failed to load repositories");
+      const rData = await rRes.json();
+      setRepos(Array.isArray(rData) ? rData : (rData.repositories || []));
+      setReposLoaded(true);
+    } catch {
+      addToast("Failed to load repositories", "error");
+    } finally {
+      setReposLoading(false);
+    }
+  }, [reposLoading, addToast]);
 
   const handleScanStart = async (repo: Repo) => {
     const owner = repo.owner?.login || repo.full_name?.split("/")[0] || "";
@@ -951,50 +964,112 @@ export default function RepositoriesPage() {
           </div>
         ) : (
           <>
+            {/* ── Page header ── */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-7">
               <div>
                 <h1 className="text-xl font-bold text-zinc-100">Repositories</h1>
                 <p className="text-zinc-500 text-sm mt-0.5">Scan your codebases for vulnerabilities.</p>
               </div>
-              <div className="relative group w-full md:w-80">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600 group-focus-within:text-indigo-400 transition-colors">
-                  <Icons.Search />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Search repositories…"
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  className="w-full bg-zinc-900/60 border border-zinc-800 text-sm text-zinc-200 rounded-xl pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all placeholder:text-zinc-600"
-                />
+              <div className="flex items-center gap-3">
+                {/* Search — only when repos are loaded */}
+                {reposLoaded && (
+                  <div className="relative group w-full md:w-72">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600 group-focus-within:text-indigo-400 transition-colors">
+                      <Icons.Search />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search repositories…"
+                      value={query}
+                      onChange={e => setQuery(e.target.value)}
+                      className="w-full bg-zinc-900/60 border border-zinc-800 text-sm text-zinc-200 rounded-xl pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/40 transition-all placeholder:text-zinc-600"
+                    />
+                  </div>
+                )}
+
+                {/* Import button */}
+                <button
+                  onClick={loadRepos}
+                  disabled={reposLoading}
+                  className={`flex-shrink-0 flex items-center gap-2.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 border shadow-lg active:scale-[0.97] ${
+                    reposLoading
+                      ? "bg-zinc-800/80 border-zinc-700/50 text-zinc-500 cursor-not-allowed"
+                      : reposLoaded
+                      ? "bg-zinc-900 border-zinc-700/60 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-600 hover:text-zinc-100"
+                      : "bg-zinc-100 border-zinc-200/20 text-zinc-900 hover:bg-white shadow-zinc-900/40"
+                  }`}
+                >
+                  {reposLoading ? (
+                    <>
+                      {/* Spinner */}
+                      <svg className="w-4 h-4 animate-spin text-zinc-500" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                      </svg>
+                      <span>Importing…</span>
+                    </>
+                  ) : (
+                    <>
+                      {/* GitHub logo */}
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                      </svg>
+                      <span>{reposLoaded ? "Refresh Repositories" : "Import from GitHub"}</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
 
-            {loading ? (
+            {/* ── Empty state — before any import ── */}
+            {!reposLoaded && !reposLoading && (
+              <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-zinc-800/40 rounded-2xl">
+                <div className="w-14 h-14 bg-zinc-900 border border-zinc-800 rounded-2xl flex items-center justify-center text-zinc-500 mb-5">
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                  </svg>
+                </div>
+                <h3 className="text-zinc-300 font-semibold text-sm mb-1.5">No repositories loaded</h3>
+                <p className="text-zinc-600 text-xs max-w-xs text-center leading-relaxed">
+                  Click <span className="text-zinc-400 font-medium">Import from GitHub</span> to load your repositories and start scanning for vulnerabilities.
+                </p>
+              </div>
+            )}
+
+            {/* ── Loading skeletons ── */}
+            {reposLoading && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[1,2,3,4].map(i => (
+                {[1,2,3,4,5,6].map(i => (
                   <div key={i} className="h-36 bg-zinc-900/30 rounded-xl animate-pulse border border-zinc-800/50" />
                 ))}
               </div>
-            ) : filteredRepos.length === 0 ? (
-              <div className="text-center py-16 border-2 border-dashed border-zinc-800/50 rounded-2xl">
-                <p className="text-zinc-600 text-sm">No repositories found{query ? ` for "${query}"` : "."}</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredRepos.map(repo => {
-                  const owner = repo.owner?.login || repo.full_name?.split("/")[0] || "";
-                  const repoKey = `${owner}/${repo.name}`;
-                  return (
-                    <RepoCard
-                      key={repo.id}
-                      repo={repo}
-                      scanning={activeScanRepo === repoKey}
-                      onScanStart={() => handleScanStart(repo)}
-                    />
-                  );
-                })}
-              </div>
+            )}
+
+            {/* ── Repos grid ── */}
+            {reposLoaded && !reposLoading && (
+              filteredRepos.length === 0 ? (
+                <div className="text-center py-16 border-2 border-dashed border-zinc-800/50 rounded-2xl">
+                  <p className="text-zinc-600 text-sm">No repositories found{query ? ` for "${query}"` : "."}</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-zinc-600 mb-4 font-medium">{filteredRepos.length} repositories</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {filteredRepos.map(repo => {
+                      const owner = repo.owner?.login || repo.full_name?.split("/")[0] || "";
+                      const repoKey = `${owner}/${repo.name}`;
+                      return (
+                        <RepoCard
+                          key={repo.id}
+                          repo={repo}
+                          scanning={activeScanRepo === repoKey}
+                          onScanStart={() => handleScanStart(repo)}
+                        />
+                      );
+                    })}
+                  </div>
+                </>
+              )
             )}
           </>
         )}
