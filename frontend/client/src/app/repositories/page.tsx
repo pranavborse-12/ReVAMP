@@ -61,6 +61,21 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
     </svg>
   ),
+  ChevronRight: () => (
+    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  ),
+  ExternalLink: () => (
+    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+    </svg>
+  ),
+  Eye: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
+  ),
 };
 
 // --- TYPES ---
@@ -472,11 +487,292 @@ function AIFixModal({
   );
 }
 
+type CodeViewerProps = {
+  vulnerability: Vulnerability;
+  repoOwner: string;
+  repoName: string;
+  onClose: () => void;
+  onFixWithAI: () => void;
+};
+// ─── SONARQUBE-STYLE CODE VIEWER MODAL ───────────────────────────────────────
+function CodeViewerModal({ vulnerability, repoOwner, repoName, onClose, onFixWithAI }: CodeViewerProps) {
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"file" | "fix">("file");
+  const [fixResult, setFixResult] = useState<AIFixResult | null>(null);
+  const [fixLoading, setFixLoading] = useState(false);
+  const [fixError, setFixError] = useState<string | null>(null);
+  const lineRefs = React.useRef<Record<number, HTMLTableRowElement | null>>({});
+
+  const startLine = vulnerability.location.start_line;
+  const endLine = vulnerability.location.end_line;
+
+  // Fetch the full file from GitHub via backend proxy
+  useEffect(() => {
+    const fetchFile = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const encodedPath = encodeURIComponent(vulnerability.location.file);
+        const res = await fetch(
+          `${API_BASE_URL}/api/github/repos/${repoOwner}/${repoName}/file-content?path=${encodedPath}&ref=main`,
+          { credentials: "include" }
+        );
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(e.detail || "Failed to load file");
+        }
+        const data = await res.json();
+        setFileContent(data.content);
+      } catch (err: any) {
+        setError(err.message || "Could not load file content");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchFile();
+  }, [vulnerability.location.file, repoOwner, repoName]);
+
+  // Auto-scroll to vulnerable line once content is loaded
+  useEffect(() => {
+    if (fileContent && lineRefs.current[startLine]) {
+      setTimeout(() => {
+        lineRefs.current[startLine]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
+    }
+  }, [fileContent, startLine]);
+
+  // Fetch AI fix when Fix tab is opened
+  const handleFixTab = async () => {
+    setActiveTab("fix");
+    if (fixResult || fixLoading) return;
+    setFixLoading(true);
+    setFixError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/ai/fix-vulnerability`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          vulnerability,
+          repo_owner: repoOwner,
+          repo_name: repoName,
+        }),
+      });
+      if (!response.ok) {
+        const e = await response.json().catch(() => ({ detail: response.statusText }));
+        throw new Error(e.detail || "AI fix failed");
+      }
+      setFixResult(await response.json());
+    } catch (err: any) {
+      setFixError(err.message || "Failed to generate fix");
+    } finally {
+      setFixLoading(false);
+    }
+  };
+
+  const sev = SEVERITY_CONFIG[vulnerability.severity as keyof typeof SEVERITY_CONFIG] || SEVERITY_CONFIG.INFO;
+  const lines = fileContent ? fileContent.split("\n") : [];
+  const fileParts = vulnerability.location.file.split("/");
+
+  return (
+    <div className="fixed inset-0 z-[70] flex flex-col bg-[#0a0a0c] text-zinc-100">
+      {/* ── Top bar ── */}
+      <div className="h-12 bg-zinc-950 border-b border-zinc-800/80 flex items-center px-4 gap-3 flex-shrink-0">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1 text-xs font-mono text-zinc-500 flex-1 min-w-0 overflow-hidden">
+          <span className="text-zinc-400 font-semibold">{repoOwner}/{repoName}</span>
+          {fileParts.map((part : string , i : number) => (
+            <React.Fragment key={i}>
+              <span className="text-zinc-700 flex-shrink-0"><Icons.ChevronRight /></span>
+              <span className={i === fileParts.length - 1 ? "text-zinc-200 font-semibold truncate" : "text-zinc-500 truncate"}>
+                {part}
+              </span>
+            </React.Fragment>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="text-xs text-zinc-600 font-mono">
+            L{startLine}–{endLine}
+          </span>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-all"
+          >
+            <Icons.Close />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Vulnerability banner ── */}
+      <div className={`flex-shrink-0 px-4 py-2.5 border-b flex items-center gap-3 ${sev.bg} border-${sev.border}`}
+        style={{ borderBottomColor: "rgba(255,255,255,0.06)" }}>
+        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sev.dot}`} />
+        <SeverityBadge severity={vulnerability.severity} />
+        <span className="text-sm font-semibold text-zinc-200 flex-1 truncate">{vulnerability.vulnerability_type}</span>
+        <span className="text-xs text-zinc-500 font-mono hidden sm:block">{vulnerability.rule_id}</span>
+        <button
+          onClick={handleFixTab}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 hover:text-indigo-200 transition-all"
+        >
+          <Icons.Wand />
+          Fix with AI
+        </button>
+      </div>
+
+      {/* ── Tab bar ── */}
+      <div className="flex-shrink-0 flex border-b border-zinc-800/60 bg-zinc-950 px-4 gap-0">
+        <button
+          onClick={() => setActiveTab("file")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-all ${
+            activeTab === "file" ? "text-indigo-400 border-indigo-500" : "text-zinc-500 border-transparent hover:text-zinc-300"
+          }`}
+        >
+          <Icons.Eye />
+          Source File
+        </button>
+        <button
+          onClick={handleFixTab}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-all ${
+            activeTab === "fix" ? "text-indigo-400 border-indigo-500" : "text-zinc-500 border-transparent hover:text-zinc-300"
+          }`}
+        >
+          <Icons.Wand />
+          AI Fix
+          {fixResult && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ml-0.5" />}
+        </button>
+      </div>
+
+      {/* ── Body ── */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {/* SOURCE FILE TAB */}
+        {activeTab === "file" && (
+          <div className="h-full overflow-auto">
+            {loading ? (
+              <div className="flex flex-col items-center justify-center h-full gap-4">
+                <div className="flex gap-1">
+                  {[0,1,2].map(i => (
+                    <div key={i} className="w-2 h-2 rounded-full bg-indigo-500/60 animate-bounce"
+                      style={{ animationDelay: `${i * 150}ms` }} />
+                  ))}
+                </div>
+                <p className="text-zinc-600 text-sm">Loading file…</p>
+              </div>
+            ) : error ? (
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-8">
+                <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
+                  <Icons.Warning />
+                </div>
+                <p className="text-zinc-300 font-semibold text-sm">Failed to load file</p>
+                <p className="text-zinc-600 text-xs font-mono">{error}</p>
+              </div>
+            ) : (
+              <table className="w-full text-xs font-mono border-collapse">
+                <tbody>
+                  {lines.map((line, idx) => {
+                    const lineNum = idx + 1;
+                    const isVulnStart = lineNum === startLine;
+                    const isVulnRange = lineNum >= startLine && lineNum <= endLine;
+                    return (
+                      <tr
+                        key={lineNum}
+                        ref={el => { lineRefs.current[lineNum] = el; }}
+                        className={`group transition-colors ${
+                          isVulnStart
+                            ? "bg-red-500/12 border-l-2 border-red-500"
+                            : isVulnRange
+                            ? "bg-red-500/6 border-l-2 border-red-500/40"
+                            : "border-l-2 border-transparent hover:bg-zinc-900/40"
+                        }`}
+                      >
+                        {/* Line number */}
+                        <td className={`select-none w-14 pl-4 pr-3 py-0.5 text-right align-top border-r leading-5 ${
+                          isVulnRange ? "text-red-500/70 border-red-500/20" : "text-zinc-700 border-zinc-800/40 group-hover:text-zinc-500"
+                        }`}>
+                          {lineNum}
+                        </td>
+
+                        {/* Vuln marker column */}
+                        <td className="w-6 text-center align-top py-0.5">
+                          {isVulnStart && (
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5" />
+                          )}
+                        </td>
+
+                        {/* Code */}
+                        <td className={`pl-2 pr-8 py-0.5 whitespace-pre align-top leading-5 ${
+                          isVulnRange ? "text-zinc-100" : "text-zinc-400"
+                        }`}>
+                          {line || " "}
+                        </td>
+
+                        {/* Inline annotation on the vuln start line */}
+                        {isVulnStart && (
+                          <td className="pr-4 py-0.5 align-top whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${sev.bg} ${sev.color} border ${sev.border}`}>
+                              {vulnerability.vulnerability_type}
+                            </span>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* AI FIX TAB */}
+        {activeTab === "fix" && (
+          <div className="h-full overflow-hidden flex flex-col">
+            {fixLoading ? (
+              <AILoadingPanel filePath={vulnerability.location.file} />
+            ) : fixError ? (
+              <div className="flex flex-col items-center justify-center flex-1 gap-3 p-8 text-center">
+                <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
+                  <Icons.Warning />
+                </div>
+                <p className="text-zinc-300 font-semibold text-sm">Fix generation failed</p>
+                <p className="text-red-400 text-xs font-mono">{fixError}</p>
+              </div>
+            ) : fixResult ? (
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                {/* Side-by-side diff */}
+                <div className="flex-1 min-h-0 grid grid-cols-2 divide-x divide-zinc-800/60 overflow-hidden">
+                  <CodeBlock code={fixResult.original_code} label="Vulnerable" variant="danger" />
+                  <CodeBlock code={fixResult.fixed_code} label="Secure Patch" variant="safe" />
+                </div>
+                {/* Analysis strip */}
+                <div className="flex-shrink-0 border-t border-zinc-800/60 p-4 bg-zinc-950/80 space-y-2 overflow-y-auto max-h-44">
+                  {fixResult.changes_made.map((change, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs">
+                      <span className="text-emerald-400 mt-0.5 flex-shrink-0"><Icons.Check /></span>
+                      <span className="text-zinc-300 leading-relaxed">{change}</span>
+                    </div>
+                  ))}
+                </div>
+                {/* Footer */}
+                <div className="flex-shrink-0 border-t border-zinc-800/60 px-4 py-2.5 flex items-center justify-between bg-[#0e0e10]">
+                  <p className="text-xs text-zinc-600 font-mono">{vulnerability.location.file}</p>
+                  <CopyButton text={fixResult.fixed_code} label="Copy Patch" />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── SCAN RESULTS MODAL ───────────────────────────────────────────────────────
 function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: () => void }) {
   const [selectedVuln, setSelectedVuln] = useState<Vulnerability | null>(null);
   const [filterSev, setFilterSev] = useState<string | null>(null);
   const [fixingVuln, setFixingVuln] = useState<Vulnerability | null>(null);
+  const [viewingVuln, setViewingVuln] = useState<Vulnerability | null>(null);
 
   useEffect(() => {
     if (result.vulnerabilities.length > 0 && !selectedVuln) {
@@ -544,7 +840,7 @@ function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: ()
               const sev = SEVERITY_CONFIG[vuln.severity] || SEVERITY_CONFIG.INFO;
               return (
                 <div key={idx} onClick={() => setSelectedVuln(vuln)}
-                  className={`p-4 border-b border-zinc-800/40 cursor-pointer transition-all hover:bg-zinc-900/60 ${
+                  className={`group p-4 border-b border-zinc-800/40 cursor-pointer transition-all hover:bg-zinc-900/60 ${
                     selectedVuln === vuln ? "bg-zinc-900 border-l-2 border-l-indigo-500" : "border-l-2 border-l-transparent"
                   }`}>
                   <div className="flex justify-between items-start mb-1.5">
@@ -552,9 +848,18 @@ function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: ()
                     <SeverityBadge severity={vuln.severity} />
                   </div>
                   <p className="text-xs text-zinc-500 line-clamp-2 mb-2 leading-relaxed">{vuln.message}</p>
-                  <div className="flex items-center gap-1.5 text-[10px] text-zinc-600 font-mono">
-                    <Icons.File />
-                    <span className="truncate">{vuln.location.file}:{vuln.location.start_line}</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-[10px] text-zinc-600 font-mono">
+                      <Icons.File />
+                      <span className="truncate">{vuln.location.file}:{vuln.location.start_line}</span>
+                    </div>
+                    <button
+                      onClick={e => { e.stopPropagation(); setViewingVuln(vuln); }}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <Icons.Eye />
+                      View File
+                    </button>
                   </div>
                 </div>
               );
@@ -566,7 +871,7 @@ function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: ()
         <div className="flex-1 bg-zinc-950 overflow-y-auto hidden md:block">
           {selectedVuln ? (
             <div className="p-8 max-w-3xl mx-auto">
-              {/* Title row with AI fix button */}
+              {/* Title row with action buttons */}
               <div className="flex items-start justify-between gap-4 mb-6 pb-6 border-b border-zinc-800">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-3">
@@ -578,8 +883,15 @@ function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: ()
                   <h1 className="text-xl font-bold text-zinc-100 mb-2">{selectedVuln.vulnerability_type}</h1>
                   <p className="text-zinc-400 text-sm leading-relaxed">{selectedVuln.message}</p>
                 </div>
-                {/* ← Clean, professional AI fix button */}
-                <div className="flex-shrink-0 mt-1">
+                <div className="flex-shrink-0 mt-1 flex flex-col gap-2">
+                  {/* View File button — SonarQube style */}
+                  <button
+                    onClick={() => setViewingVuln(selectedVuln)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800/80 border border-zinc-700/50 text-zinc-300 hover:text-zinc-100 hover:border-zinc-600 transition-all"
+                  >
+                    <Icons.Eye />
+                    View in File
+                  </button>
                   <AIFixButton onClick={() => setFixingVuln(selectedVuln)} />
                 </div>
               </div>
@@ -635,6 +947,15 @@ function ScanResultsModal({ result, onClose }: { result: ScanResult; onClose: ()
         </div>
       </div>
 
+      {viewingVuln && (
+        <CodeViewerModal
+          vulnerability={viewingVuln}
+          repoOwner={result.repo_owner}
+          repoName={result.repo_name}
+          onClose={() => setViewingVuln(null)}
+          onFixWithAI={() => { setFixingVuln(viewingVuln); setViewingVuln(null); }}
+        />
+      )}
       {fixingVuln && (
         <AIFixModal
           vulnerability={fixingVuln}

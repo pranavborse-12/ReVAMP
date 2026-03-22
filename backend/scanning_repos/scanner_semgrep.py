@@ -1,59 +1,71 @@
 """
-Semgrep Scanner - Fixed and optimized.
+Semgrep Scanner — Local rules, zero network calls.
+Per-file language detection for incremental scans.
 
-Root causes of previous 0-findings bug:
-  1. --severity INFO told semgrep CLI to output ONLY INFO findings
-     but the parser was skipping INFO → everything filtered out
-  2. --timeout 10 too aggressive — rules need 15-30s on first run
-  3. These two flags contradicted each other completely
-
-Fixes applied:
-  - Removed --severity flag entirely (get all findings, filter in parser)
-  - Increased --timeout to 45s per rule (safe for first-run downloads)
-  - Kept --jobs 4, --no-rewrite-rule-ids for speed
-  - Added debug logging to show raw finding count before filtering
-  - Language-aware rulesets — only load relevant ones
+scan()                → full repo scan (uses repo-level detected languages)
+scan_files(paths)     → incremental scan — detects language per changed file,
+                        loads ONLY those masters → massive rule reduction
 """
-import os
-import json
-import subprocess
-from typing import List, Dict, Tuple, Optional, Set
-import httpx
+from __future__ import annotations
 
-from .config import logger, SEMGREP_TIMEOUT, SEMGREP_APP_TOKEN
+import json
+import os
+import subprocess
+from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple
+
+from .config import logger, SEMGREP_TIMEOUT, SEMGREP_APP_TOKEN, LANGUAGE_EXTENSIONS
 from .utils import normalize_severity, extract_vulnerability_type
 
+RULES_DIR = Path(__file__).parent / "semgrep_rules"
 
-SEMGREP_API_BASE = "https://semgrep.dev/api/v1"
+# Always loaded — every scan regardless of language
+UNIVERSAL_RULES = RULES_DIR / "master-universal.yaml"
+DEVOPS_RULES    = RULES_DIR / "master-devops.yaml"
+
+# Language → master file
+LANGUAGE_RULES: Dict[str, Path] = {
+    "python":     RULES_DIR / "master-python.yaml",
+    "javascript": RULES_DIR / "master-javascript.yaml",
+    "typescript": RULES_DIR / "master-javascript.yaml",
+    "java":       RULES_DIR / "master-java.yaml",
+    "go":         RULES_DIR / "master-golang.yaml",
+    "ruby":       RULES_DIR / "master-ruby.yaml",
+    "php":        RULES_DIR / "master-php.yaml",
+    "rust":       RULES_DIR / "master-systems.yaml",
+    "c":          RULES_DIR / "master-systems.yaml",
+    "cpp":        RULES_DIR / "master-systems.yaml",
+}
 
 SKIP_DIRS = [
     "node_modules", "vendor", ".git", "test", "tests",
-    "__pycache__", "venv", ".venv", "dist", "build", "target",
-    "migrations", "static", "media",
+    "__pycache__", "venv", ".venv", "dist", "build",
+    "target", "migrations", "static", "media",
 ]
 
-# Core rulesets — always run regardless of language
-CORE_RULESETS = [
-    "p/owasp-top-ten",
-    "p/secrets",
-]
-
-# Only added when that language is detected in the repo
-LANGUAGE_RULESETS = {
-    "python":     "p/python",
-    "javascript": "p/javascript",
-    "typescript": "p/javascript",
-    "java":       "p/java",
-    "go":         "p/golang",
-}
-
-# Semgrep reports these severity strings — map them to our standard
 SEMGREP_SEVERITY_MAP = {
     "ERROR":   "HIGH",
     "WARNING": "MEDIUM",
     "INFO":    "LOW",
     "NOTE":    "LOW",
 }
+
+
+def _detect_languages_from_paths(relative_paths: Set[str]) -> Set[str]:
+    """
+    Detect languages from a set of file paths using their extensions.
+    Used for incremental scans to load only relevant master files.
+
+    e.g. {"src/auth.py", "api/routes.py"} → {"python"}
+         {"app.py", "index.js"}            → {"python", "javascript"}
+    """
+    langs: Set[str] = set()
+    for path in relative_paths:
+        _, ext = os.path.splitext(path.lower())
+        lang = LANGUAGE_EXTENSIONS.get(ext)
+        if lang and lang in LANGUAGE_RULES:
+            langs.add(lang)
+    return langs
 
 
 class SemgrepScanner:
@@ -63,112 +75,198 @@ class SemgrepScanner:
         self.languages = languages or set()
         self.name = "Semgrep"
         self.token = SEMGREP_APP_TOKEN
-        self.api_headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json",
-        }
-
-    # ------------------------------------------------------------------
-    # Availability
-    # ------------------------------------------------------------------
 
     def is_available(self) -> bool:
         try:
-            result = subprocess.run(
+            r = subprocess.run(
                 ["semgrep", "--version"],
-                capture_output=True,
-                timeout=30,
-                encoding="utf-8",
-                errors="replace",
+                capture_output=True, timeout=30,
+                encoding="utf-8", errors="replace",
             )
-            return result.returncode == 0
+            return r.returncode == 0
         except FileNotFoundError:
-            logger.error("Semgrep CLI not found. Install outside venv: pip install semgrep")
+            logger.error("Semgrep not found — install: pip install semgrep")
             return False
         except subprocess.TimeoutExpired:
-            logger.warning("Semgrep --version slow (Windows cold start) — proceeding")
             return True
         except Exception as e:
-            logger.error(f"Semgrep availability check failed: {e}")
+            logger.error(f"Semgrep check failed: {e}")
             return False
 
     # ------------------------------------------------------------------
-    # Main entry point
+    # Config arg builders
+    # ------------------------------------------------------------------
+
+    def _get_config_args_for_languages(self, languages: Set[str]) -> List[str]:
+        """
+        Build --config args for a given set of languages.
+        Always includes universal + devops.
+        Adds per-language master files for the provided language set.
+        """
+        configs: List[str] = []
+        loaded: List[str] = []
+
+        # Always load universal + devops
+        for master in [UNIVERSAL_RULES, DEVOPS_RULES]:
+            if master.exists():
+                configs += ["--config", str(master)]
+                loaded.append(master.stem)
+            else:
+                logger.warning(
+                    f"Semgrep: missing {master.name} — "
+                    "run download_rules.py + build_masters.py"
+                )
+
+        # Load language-specific masters
+        seen: Set[str] = set()
+        for lang in languages:
+            rule_file = LANGUAGE_RULES.get(lang)
+            if rule_file and rule_file.exists():
+                fstr = str(rule_file)
+                if fstr not in seen:
+                    seen.add(fstr)
+                    configs += ["--config", fstr]
+                    loaded.append(rule_file.stem)
+            elif rule_file:
+                logger.debug(f"Semgrep: no master for language '{lang}' — skipping")
+
+        logger.info(f"Semgrep: {len(loaded)} masters loaded: {loaded}")
+        return configs
+
+    def _get_config_args(self) -> List[str]:
+        """Config args for full repo scan — uses repo-level language detection."""
+        return self._get_config_args_for_languages(self.languages)
+
+    # ------------------------------------------------------------------
+    # Full scan
     # ------------------------------------------------------------------
 
     def scan(self) -> Tuple[List[Dict], str]:
+        """Full repository scan using repo-level language detection."""
         if not self.is_available():
-            return [], "Semgrep CLI not installed. Run outside venv: pip install semgrep"
+            return [], "Semgrep CLI not installed"
 
-        if self.token:
-            logger.info("Semgrep: token configured — managed rules included")
-        else:
-            logger.warning("Semgrep: no token — using public rulesets only")
+        config_args = self._get_config_args()
+        if not config_args:
+            return [], "No rule files found — run download_rules.py + build_masters.py"
 
-        try:
-            findings_json, error = self._run_scan()
-            if error and not findings_json:
-                return [], error
+        findings_json, error = self._run_scan(config_args=config_args, targets=[self.repo_path])
+        if error and not findings_json:
+            return [], error
 
-            vulnerabilities = self._parse_findings(findings_json)
-            logger.info(f"Semgrep found {len(vulnerabilities)} issues")
-            return vulnerabilities, error
-
-        except Exception as e:
-            logger.error(f"Semgrep scan error: {e}", exc_info=True)
-            return [], str(e)
+        vulns = self._parse_findings(findings_json)
+        logger.info(f"Semgrep full scan: {len(vulns)} issues found")
+        return vulns, error
 
     # ------------------------------------------------------------------
-    # Build ruleset list
+    # Incremental scan — per-file language detection
     # ------------------------------------------------------------------
 
-    def _build_rulesets(self) -> List[str]:
-        rulesets = list(CORE_RULESETS)
+    def scan_files(self, relative_paths: Set[str]) -> Tuple[List[Dict], str]:
+        """
+        Scan only the given changed files.
 
-        for lang in self.languages:
-            ruleset = LANGUAGE_RULESETS.get(lang)
-            if ruleset and ruleset not in rulesets:
-                rulesets.append(ruleset)
-                logger.info(f"Semgrep: adding {ruleset} for language: {lang}")
+        Key optimization over full scan:
+          1. Only passes changed files as targets (not the whole repo)
+          2. Detects languages from the changed files' extensions
+          3. Loads ONLY the master files for those languages
 
-        logger.info(f"Semgrep: using {len(rulesets)} rulesets: {rulesets}")
-        return rulesets
+        Example: 2 Python files changed out of 1000 total
+          Full scan:        4000+ rules × 1000 files
+          Incremental:      ~2000 python rules × 2 files  ← 1000x less work
+        """
+        if not relative_paths:
+            return [], ""
+
+        if not self.is_available():
+            return [], "Semgrep CLI not installed"
+
+        # Detect languages from the changed files specifically
+        file_languages = _detect_languages_from_paths(relative_paths)
+
+        if not file_languages:
+            # Changed files have no language-specific rules (e.g. only .md, .txt)
+            # Still run universal rules (secrets detection etc.) on them
+            logger.info(
+                f"Semgrep incremental: no language-specific rules for changed files "
+                f"— running universal rules only"
+            )
+
+        config_args = self._get_config_args_for_languages(file_languages)
+        if not config_args:
+            return [], "No rule files found"
+
+        # Resolve to absolute paths; drop files that no longer exist (deletions)
+        abs_targets: List[str] = []
+        for rel in relative_paths:
+            abs_path = os.path.join(self.repo_path, rel.replace("/", os.sep))
+            if os.path.exists(abs_path):
+                abs_targets.append(abs_path)
+            else:
+                logger.debug(f"Semgrep incremental: skipping deleted file {rel}")
+
+        if not abs_targets:
+            logger.info("Semgrep incremental: all changed files deleted — nothing to scan")
+            return [], ""
+
+        logger.info(
+            f"Semgrep incremental: {len(abs_targets)} files, "
+            f"languages={file_languages}, "
+            f"masters={len(config_args)//2}"
+        )
+
+        findings_json, error = self._run_scan(config_args=config_args, targets=abs_targets)
+        if error and not findings_json:
+            return [], error
+
+        vulns = self._parse_findings(findings_json)
+        logger.info(f"Semgrep incremental: {len(vulns)} issues found in {len(abs_targets)} files")
+        return vulns, error
 
     # ------------------------------------------------------------------
-    # Run scan
+    # CLI execution
     # ------------------------------------------------------------------
 
-    def _run_scan(self) -> Tuple[Optional[Dict], str]:
+    def _run_scan(
+        self,
+        config_args: List[str],
+        targets: List[str],
+    ) -> Tuple[Optional[Dict], str]:
+        import multiprocessing
+        jobs = min(multiprocessing.cpu_count(), 8)
+
         env = os.environ.copy()
         if self.token:
             env["SEMGREP_APP_TOKEN"] = self.token
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["SEMGREP_SEND_METRICS"] = "off"
 
-        config_args = []
-        for ruleset in self._build_rulesets():
-            config_args += ["--config", ruleset]
-
-        exclude_args = []
+        exclude_args: List[str] = []
         for d in SKIP_DIRS:
             exclude_args += ["--exclude", d]
 
         cmd = [
             "semgrep", "scan",
             *config_args,
-            "--json",                # structured JSON output to stdout
-            "--quiet",               # suppress progress bar (stderr only)
-            "--no-rewrite-rule-ids", # skip ID rewriting — saves post-processing time
-            "--timeout", "45",       # per-rule timeout — 45s allows first-run downloads
-            "--timeout-threshold", "3",  # abort rule after 3 timeouts
-            "--max-memory", "2048",
-            "--jobs", "4",           # parallel rule execution
-            "--metrics", "off",      # no telemetry
-            # NO --severity flag here — that filters OUTPUT not input
-            # We filter severity in the parser instead, with full control
+            "--json",
+            "--quiet",
+            "--no-rewrite-rule-ids",
+            "--timeout", "5",
+            "--timeout-threshold", "1",
+            "--max-memory", "1024",
+            "--max-target-bytes", "500000",
+            "--jobs", str(jobs),
+            "--metrics", "off",
+            "--optimizations", "all",
             *exclude_args,
-            self.repo_path,
+            *targets,
         ]
 
-        logger.info(f"Running: semgrep scan (jobs=4, per-rule timeout=45s)")
+        logger.info(
+            f"Semgrep CLI: {len(config_args)//2} masters, "
+            f"{len(targets)} target(s), {jobs} jobs"
+        )
 
         try:
             result = subprocess.run(
@@ -181,73 +279,57 @@ class SemgrepScanner:
                 env=env,
             )
 
-            # Log stderr for debugging (semgrep puts stats/warnings there)
             if result.stderr:
-                logger.debug(f"Semgrep stderr: {result.stderr[:500]}")
+                logger.debug(f"Semgrep stderr: {result.stderr[:300]}")
 
-            # Exit 0 = clean, 1 = findings found — both valid
-            # Exit 2+ = configuration/runtime error
             if result.returncode >= 2 and not result.stdout:
-                stderr_snippet = result.stderr[:400] if result.stderr else "no stderr"
-                return None, f"Semgrep error (exit {result.returncode}): {stderr_snippet}"
+                return None, f"Semgrep error (exit {result.returncode}): {result.stderr[:300]}"
 
             if not result.stdout or not result.stdout.strip():
-                stderr_snippet = result.stderr[:400] if result.stderr else "no output"
-                return None, f"Semgrep produced no output: {stderr_snippet}"
+                return None, "Semgrep produced no output"
 
             try:
                 output = json.loads(result.stdout)
-                raw_count = len(output.get("results", []))
-                logger.info(f"Semgrep raw findings before filtering: {raw_count}")
+                logger.info(f"Semgrep raw findings: {len(output.get('results', []))}")
                 return output, ""
             except json.JSONDecodeError:
-                # Semgrep occasionally mixes a log line before the JSON
                 for line in result.stdout.splitlines():
                     line = line.strip()
                     if line.startswith("{"):
                         try:
-                            output = json.loads(line)
-                            raw_count = len(output.get("results", []))
-                            logger.info(f"Semgrep raw findings before filtering: {raw_count}")
-                            return output, ""
+                            return json.loads(line), ""
                         except Exception:
                             continue
-                return None, f"Semgrep output not valid JSON: {result.stdout[:300]}"
+                return None, f"Invalid JSON output: {result.stdout[:200]}"
 
         except subprocess.TimeoutExpired:
-            logger.error(f"Semgrep timed out after {SEMGREP_TIMEOUT}s")
             return None, f"Semgrep timed out after {SEMGREP_TIMEOUT}s"
-
         except FileNotFoundError:
-            return None, "Semgrep CLI not found — install outside venv: pip install semgrep"
-
+            return None, "Semgrep CLI not found"
         except Exception as e:
-            return None, f"Semgrep CLI error: {e}"
+            return None, f"Semgrep error: {e}"
 
     # ------------------------------------------------------------------
     # Parse findings
     # ------------------------------------------------------------------
 
-    def _parse_findings(self, output: Dict) -> List[Dict]:
+    def _parse_findings(self, output: Optional[Dict]) -> List[Dict]:
         if not output:
             return []
 
         vulnerabilities = []
-        skipped_info = 0
+        skipped = 0
 
         for finding in output.get("results", []):
             try:
-                extra = finding.get("extra", {}) or {}
+                extra    = finding.get("extra", {}) or {}
                 metadata = extra.get("metadata", {}) or {}
+                rule_id  = finding.get("check_id", "unknown")
+                message  = extra.get("message", "")
 
-                rule_id = finding.get("check_id", "unknown")
-                message = extra.get("message", "")
+                raw_sev    = extra.get("severity", "WARNING")
+                normalized = SEMGREP_SEVERITY_MAP.get(raw_sev.upper(), raw_sev)
 
-                # Semgrep uses ERROR/WARNING/INFO — normalize first
-                raw_severity = extra.get("severity", "WARNING")
-                normalized = SEMGREP_SEVERITY_MAP.get(raw_severity.upper(), raw_severity)
-
-                # Apply CWE-based severity upgrade
                 cwe_raw = metadata.get("cwe", [])
                 if isinstance(cwe_raw, str):
                     cwe_raw = [cwe_raw]
@@ -258,145 +340,45 @@ class SemgrepScanner:
 
                 severity = normalize_severity(normalized, rule_id, cwe_list)
 
-                # Skip only genuine INFO/LOW noise after severity upgrade
-                # This means a CWE-upgraded finding won't get skipped
-                if severity in ("INFO",) and not cwe_list:
-                    skipped_info += 1
+                if severity == "INFO" and not cwe_list:
+                    skipped += 1
                     continue
 
                 owasp_raw = metadata.get("owasp", [])
                 if isinstance(owasp_raw, str):
                     owasp_raw = [owasp_raw]
 
-                vuln_type = extract_vulnerability_type(rule_id, message)
-
                 file_path = finding.get("path", "")
                 if os.path.isabs(file_path) and file_path.startswith(self.repo_path):
                     file_path = os.path.relpath(file_path, self.repo_path)
+                file_path = file_path.replace("\\", "/")
 
                 start = finding.get("start", {}) or {}
-                end = finding.get("end", {}) or {}
+                end   = finding.get("end",   {}) or {}
 
                 vulnerabilities.append({
-                    "scanner": "Semgrep",
-                    "rule_id": rule_id,
-                    "severity": severity,
-                    "message": message,
-                    "vulnerability_type": vuln_type,
+                    "scanner":            "Semgrep",
+                    "rule_id":            rule_id,
+                    "severity":           severity,
+                    "message":            message,
+                    "vulnerability_type": extract_vulnerability_type(rule_id, message),
                     "location": {
-                        "file": file_path,
+                        "file":       file_path,
                         "start_line": start.get("line", 0),
-                        "end_line": end.get("line", 0),
-                        "start_col": start.get("col"),
-                        "end_col": end.get("col"),
+                        "end_line":   end.get("line", 0),
+                        "start_col":  start.get("col"),
+                        "end_col":    end.get("col"),
                     },
-                    "cwe": cwe_list if cwe_list else None,
-                    "owasp": owasp_raw,
-                    "confidence": metadata.get("confidence", "MEDIUM"),
+                    "cwe":          cwe_list if cwe_list else None,
+                    "owasp":        owasp_raw,
+                    "confidence":   metadata.get("confidence", "MEDIUM"),
                     "code_snippet": extra.get("lines", "")[:200] or None,
                 })
 
             except Exception as e:
                 logger.warning(f"Failed to parse semgrep finding: {e}")
-                continue
 
-        if skipped_info > 0:
-            logger.info(f"Semgrep: skipped {skipped_info} pure INFO findings")
+        if skipped:
+            logger.info(f"Semgrep: skipped {skipped} pure INFO findings")
 
         return vulnerabilities
-
-    # ------------------------------------------------------------------
-    # Optional: Semgrep AppSec Platform API (read-only)
-    # ------------------------------------------------------------------
-
-    def fetch_api_findings(self, deployment_slug: str) -> Tuple[List[Dict], str]:
-        if not self.token:
-            return [], "No SEMGREP_APP_TOKEN configured"
-
-        vulnerabilities = []
-        page = 0
-
-        try:
-            while True:
-                with httpx.Client(timeout=30) as client:
-                    resp = client.get(
-                        f"{SEMGREP_API_BASE}/deployments/{deployment_slug}/findings",
-                        headers=self.api_headers,
-                        params={"page": page, "page_size": 100, "dedup": "true"},
-                    )
-
-                if resp.status_code == 401:
-                    return [], "Semgrep API token invalid or expired"
-                if resp.status_code != 200:
-                    return vulnerabilities, f"API error: HTTP {resp.status_code}"
-
-                data = resp.json()
-                findings = data.get("findings", [])
-                for f in findings:
-                    vuln = self._parse_api_finding(f)
-                    if vuln:
-                        vulnerabilities.append(vuln)
-
-                total = data.get("total", len(findings))
-                if (page + 1) * 100 >= total or not findings:
-                    break
-                page += 1
-
-        except Exception as e:
-            return vulnerabilities, f"API fetch error: {e}"
-
-        return vulnerabilities, ""
-
-    def _parse_api_finding(self, finding: Dict) -> Optional[Dict]:
-        try:
-            rule = finding.get("rule", {}) or {}
-            location = finding.get("location", {}) or {}
-            metadata = rule.get("metadata", {}) or {}
-            rule_id = finding.get("rule_id") or rule.get("id") or "unknown"
-            message = finding.get("message") or rule.get("name") or ""
-            raw_severity = finding.get("severity") or rule.get("severity") or "MEDIUM"
-            cwe_raw = metadata.get("cwe", [])
-            if isinstance(cwe_raw, str):
-                cwe_raw = [cwe_raw]
-            cwe_list = [c if c.upper().startswith("CWE-") else f"CWE-{c}" for c in cwe_raw]
-            owasp_raw = metadata.get("owasp", [])
-            if isinstance(owasp_raw, str):
-                owasp_raw = [owasp_raw]
-            file_path = location.get("file_path") or location.get("path") or ""
-            start_line = location.get("start_line") or location.get("line") or 0
-            return {
-                "scanner": "Semgrep",
-                "rule_id": rule_id,
-                "severity": normalize_severity(raw_severity, rule_id, cwe_list),
-                "message": message,
-                "vulnerability_type": extract_vulnerability_type(rule_id, message),
-                "location": {
-                    "file": file_path,
-                    "start_line": start_line,
-                    "end_line": location.get("end_line") or start_line,
-                    "start_col": location.get("start_col") or location.get("column"),
-                    "end_col": location.get("end_col"),
-                },
-                "cwe": cwe_list if cwe_list else None,
-                "owasp": owasp_raw,
-                "confidence": metadata.get("confidence", "MEDIUM"),
-                "code_snippet": None,
-            }
-        except Exception as e:
-            logger.warning(f"Failed to parse API finding: {e}")
-            return None
-
-    def get_deployment_slug(self) -> Tuple[Optional[str], str]:
-        if not self.token:
-            return None, "No SEMGREP_APP_TOKEN configured"
-        try:
-            with httpx.Client(timeout=10) as client:
-                resp = client.get(f"{SEMGREP_API_BASE}/deployments", headers=self.api_headers)
-            if resp.status_code != 200:
-                return None, f"HTTP {resp.status_code}: {resp.text[:200]}"
-            deployments = resp.json().get("deployments", [])
-            if not deployments:
-                return None, "No deployments found for this token"
-            return deployments[0].get("slug") or deployments[0].get("name"), ""
-        except Exception as e:
-            return None, f"Error fetching deployments: {e}"

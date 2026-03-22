@@ -443,3 +443,74 @@ async def get_github_profile(request: Request):
     Alias for /user endpoint - Get authenticated GitHub user information
     """
     return await get_github_user(request)
+
+@router.get("/repos/{owner}/{repo}/file-content")
+async def get_file_content(
+    owner: str,
+    repo: str,
+    request: Request,
+    path: str = "",
+    ref: str = "main"
+):
+    """
+    Fetch raw file content from GitHub for the code viewer.
+    Proxies through backend so the GitHub token stays server-side.
+    Works for both public and private repos.
+    """
+    try:
+        github_token = await get_github_token(request)
+
+        if not path:
+            raise HTTPException(status_code=400, detail="File path is required")
+
+        # Normalize Windows backslashes to forward slashes (scanner runs on Windows)
+        path = path.replace('\\', '/')
+
+        # GitHub Contents API — returns base64-encoded content
+        url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path.lstrip('/')}"
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                params={"ref": ref},
+                headers={
+                    "Authorization": f"token {github_token}",
+                    "Accept": "application/vnd.github.v3+json"
+                },
+                timeout=30.0
+            )
+
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"GitHub API error: {response.text}"
+            )
+
+        data = response.json()
+
+        # Decode base64 content (GitHub always returns base64 for file contents)
+        import base64
+        raw_content = data.get("content", "")
+        # GitHub adds newlines to the base64 string — strip them
+        decoded = base64.b64decode(raw_content.replace("\n", "")).decode("utf-8", errors="replace")
+
+        return {
+            "path": path,
+            "content": decoded,
+            "encoding": "utf-8",
+            "size": data.get("size", 0),
+            "sha": data.get("sha", ""),
+            "html_url": data.get("html_url", ""),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching file content: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch file content: {str(e)}"
+        )

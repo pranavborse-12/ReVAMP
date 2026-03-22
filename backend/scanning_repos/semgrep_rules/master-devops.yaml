@@ -1,0 +1,4171 @@
+rules:
+- id: dockerfile.security.last-user-is-root.last-user-is-root
+  patterns:
+  - pattern: USER root
+  - pattern-not-inside:
+      patterns:
+      - pattern: 'USER root
+
+          ...
+
+          USER $X
+
+          '
+      - metavariable-pattern:
+          metavariable: $X
+          patterns:
+          - pattern-not: root
+  message: The last user in the container is 'root'. This is a security hazard because
+    if an attacker gains control of the container they will have root access. Switch
+    back to another user after running commands as 'root'.
+  severity: ERROR
+  languages:
+  - dockerfile
+  metadata:
+    cwe:
+    - 'CWE-269: Improper Privilege Management'
+    source-rule-url: https://github.com/hadolint/hadolint/wiki/DL3002
+    references:
+    - https://github.com/hadolint/hadolint/wiki/DL3002
+    category: security
+    technology:
+    - dockerfile
+    confidence: MEDIUM
+    owasp:
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/dockerfile.security.last-user-is-root.last-user-is-root
+    shortlink: https://sg.run/5Z43
+    semgrep.dev:
+      rule:
+        r_id: 20147
+        rv_id: 1262658
+        rule_id: ReU2n5
+        version_id: 6xT29Eg
+        url: https://semgrep.dev/playground/r/6xT29Eg/dockerfile.security.last-user-is-root.last-user-is-root
+        origin: community
+- id: dockerfile.audit.dockerfile-pip-extra-index-url.dockerfile-pip-extra-index-url
+  patterns:
+  - pattern: 'RUN ... $PIP install ... --extra-index-url ...
+
+      '
+  - metavariable-regex:
+      metavariable: $PIP
+      regex: pip|pip3
+  message: 'When `--extra-index-url` is used in a `pip install` command, this is usually
+    meant to  install a package from a package index other than the public one.  However,
+    if a package is added with the same name to the public PyPi repository, and if
+    the version number is high enough, this package will be installed when building
+    this docker image. This package may be a malicious dependency. Such an attack
+    is called a dependency confusion attack. If using a private package index, prefer
+    to use `--index-url` if possible. '
+  languages:
+  - dockerfile
+  severity: INFO
+  metadata:
+    references:
+    - https://pip.pypa.io/en/stable/cli/pip_install/#cmdoption-extra-index-url
+    - https://github.com/semgrep/semgrep-rules/issues/3032
+    category: security
+    subcategory:
+    - audit
+    confidence: MEDIUM
+    impact: HIGH
+    likelihood: LOW
+    technology:
+    - docker
+    cwe:
+    - 'CWE-427: Uncontrolled Search Path Element'
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Other
+    source: https://semgrep.dev/r/dockerfile.audit.dockerfile-pip-extra-index-url.dockerfile-pip-extra-index-url
+    shortlink: https://sg.run/qk4p8
+    semgrep.dev:
+      rule:
+        r_id: 197112
+        rv_id: 1039209
+        rule_id: pKUkLD3
+        version_id: 1QTY5L3
+        url: https://semgrep.dev/playground/r/1QTY5L3/dockerfile.audit.dockerfile-pip-extra-index-url.dockerfile-pip-extra-index-url
+        origin: community
+- id: generic.dockerfile.missing-zypper-no-confirm-switch.missing-zypper-no-confirm-switch
+  severity: WARNING
+  languages:
+  - dockerfile
+  patterns:
+  - pattern: 'RUN ... zypper install ...
+
+      '
+  - pattern-not: 'RUN ... zypper install ... -y ...
+
+      '
+  - pattern-not: 'RUN ... zypper install ... --no-confirm ...
+
+      '
+  message: This 'zypper install' is missing the '-y' switch. This might stall builds
+    because it requires human intervention. Add the '-y' switch.
+  metadata:
+    source-rule-url: https://github.com/hadolint/hadolint/wiki/DL3034
+    references:
+    - https://github.com/hadolint/hadolint/wiki/DL3034
+    category: best-practice
+    technology:
+    - dockerfile
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    source: https://semgrep.dev/r/generic.dockerfile.missing-zypper-no-confirm-switch.missing-zypper-no-confirm-switch
+    shortlink: https://sg.run/R5vK
+    semgrep.dev:
+      rule:
+        r_id: 20149
+        rv_id: 945287
+        rule_id: BYUKJE
+        version_id: xyTqnqr
+        url: https://semgrep.dev/playground/r/xyTqnqr/generic.dockerfile.missing-zypper-no-confirm-switch.missing-zypper-no-confirm-switch
+        origin: community
+  paths:
+    include:
+    - '*dockerfile*'
+    - '*Dockerfile*'
+- id: dockerfile.security.dockerd-socket-mount.dockerfile-dockerd-socket-mount
+  message: The Dockerfile(image) mounts docker.sock to the container which may allow
+    an attacker already inside of the container to escape container and execute arbitrary
+    commands on the host machine.
+  languages:
+  - dockerfile
+  - yaml
+  severity: ERROR
+  metadata:
+    cwe:
+    - 'CWE-862: Missing Authorization'
+    - 'CWE-269: Improper Privilege Management'
+    confidence: HIGH
+    likelihood: MEDIUM
+    impact: HIGH
+    subcategory:
+    - audit
+    technology:
+    - dockerfile
+    category: security
+    references:
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html
+    - https://redfoxsec.com/blog/insecure-volume-mounts-in-docker/
+    - https://blog.quarkslab.com/why-is-exposing-the-docker-socket-a-really-bad-idea.html
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/dockerfile.security.dockerd-socket-mount.dockerfile-dockerd-socket-mount
+    shortlink: https://sg.run/10AAQ
+    semgrep.dev:
+      rule:
+        r_id: 146566
+        rv_id: 945266
+        rule_id: oqUgAAk
+        version_id: WrTEoEq
+        url: https://semgrep.dev/playground/r/WrTEoEq/dockerfile.security.dockerd-socket-mount.dockerfile-dockerd-socket-mount
+        origin: community
+  pattern-either:
+  - patterns:
+    - pattern: VOLUME $X
+    - metavariable-regex:
+        metavariable: $X
+        regex: /var/run/docker.sock
+  - patterns:
+    - pattern-regex: '- "/var/run/docker.sock:.*"'
+    - pattern-inside: "volumes:\n  ...\n"
+- id: dockerfile.security.no-sudo-in-dockerfile.no-sudo-in-dockerfile
+  patterns:
+  - pattern: 'RUN sudo ...
+
+      '
+  message: Avoid using sudo in Dockerfiles. Running processes as a non-root user can
+    help  reduce the potential impact of configuration errors and security vulnerabilities.
+  metadata:
+    category: security
+    technology:
+    - dockerfile
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://cwe.mitre.org/data/definitions/250.html
+    - https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#user
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: LOW
+    confidence: HIGH
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/dockerfile.security.no-sudo-in-dockerfile.no-sudo-in-dockerfile
+    shortlink: https://sg.run/80Q7
+    semgrep.dev:
+      rule:
+        r_id: 66384
+        rv_id: 1262661
+        rule_id: kxUlx1
+        version_id: pZT03zY
+        url: https://semgrep.dev/playground/r/pZT03zY/dockerfile.security.no-sudo-in-dockerfile.no-sudo-in-dockerfile
+        origin: community
+  languages:
+  - dockerfile
+  severity: WARNING
+- id: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
+  patterns:
+  - pattern: 'ENTRYPOINT $...VARS
+
+      '
+  - pattern-not-inside: 'USER $USER
+
+      ...
+
+      '
+  fix: 'USER non-root
+
+    ENTRYPOINT $...VARS
+
+    '
+  message: By not specifying a USER, a program in the container may run as 'root'.
+    This is a security hazard. If an attacker can control a process running as root,
+    they may have control over the container. Ensure that the last USER in a Dockerfile
+    is a USER other than 'root'.
+  severity: ERROR
+  languages:
+  - dockerfile
+  metadata:
+    cwe:
+    - 'CWE-269: Improper Privilege Management'
+    category: security
+    technology:
+    - dockerfile
+    confidence: MEDIUM
+    owasp:
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    references:
+    - https://owasp.org/Top10/A04_2021-Insecure_Design
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
+    shortlink: https://sg.run/k281
+    semgrep.dev:
+      rule:
+        r_id: 47272
+        rv_id: 1262659
+        rule_id: ReUW9E
+        version_id: o5TbD21
+        url: https://semgrep.dev/playground/r/o5TbD21/dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
+        origin: community
+- id: dockerfile.security.missing-user.missing-user
+  patterns:
+  - pattern: 'CMD $...VARS
+
+      '
+  - pattern-not-inside: 'USER $USER
+
+      ...
+
+      '
+  - pattern-not-inside: 'HEALTHCHECK ... CMD ...
+
+      '
+  fix: 'USER non-root
+
+    CMD $...VARS
+
+    '
+  message: By not specifying a USER, a program in the container may run as 'root'.
+    This is a security hazard. If an attacker can control a process running as root,
+    they may have control over the container. Ensure that the last USER in a Dockerfile
+    is a USER other than 'root'.
+  severity: ERROR
+  languages:
+  - dockerfile
+  metadata:
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    category: security
+    technology:
+    - dockerfile
+    confidence: MEDIUM
+    owasp:
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    references:
+    - https://owasp.org/Top10/A04_2021-Insecure_Design
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/dockerfile.security.missing-user.missing-user
+    shortlink: https://sg.run/Gbvn
+    semgrep.dev:
+      rule:
+        r_id: 20148
+        rv_id: 1262660
+        rule_id: AbUN06
+        version_id: zyTb2n2
+        url: https://semgrep.dev/playground/r/zyTb2n2/dockerfile.security.missing-user.missing-user
+        origin: community
+- id: terraform.lang.security.s3-public-rw-bucket.s3-public-rw-bucket
+  pattern: acl = "public-read-write"
+  languages:
+  - hcl
+  severity: ERROR
+  message: S3 bucket with public read-write access detected.
+  metadata:
+    references:
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket#acl
+    - https://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html#canned-acl
+    cwe:
+    - 'CWE-200: Exposure of Sensitive Information to an Unauthorized Actor'
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Mishandled Sensitive Information
+    source: https://semgrep.dev/r/terraform.lang.security.s3-public-rw-bucket.s3-public-rw-bucket
+    shortlink: https://sg.run/0nok
+    semgrep.dev:
+      rule:
+        r_id: 9754
+        rv_id: 1263900
+        rule_id: 6JUqvn
+        version_id: PkTR3y5
+        url: https://semgrep.dev/playground/r/PkTR3y5/terraform.lang.security.s3-public-rw-bucket.s3-public-rw-bucket
+        origin: community
+- id: terraform.aws.security.aws-kinesis-stream-unencrypted.aws-kinesis-stream-unencrypted
+  patterns:
+  - pattern: "resource \"aws_kinesis_stream\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not: "resource \"aws_kinesis_stream\" $ANYTHING {\n  ...\n  encryption_type\
+      \ = \"KMS\"\n  ...\n}\n"
+  message: The AWS Kinesis stream does not encrypt data at rest. The data could be
+    read if the Kinesis stream storage layer is compromised. Enable Kinesis stream
+    server-side encryption.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    cwe:
+    - 'CWE-311: Missing Encryption of Sensitive Data'
+    references:
+    - https://owasp.org/Top10/A04_2021-Insecure_Design
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kinesis_stream#encryption_type
+    - https://docs.aws.amazon.com/streams/latest/dev/server-side-encryption.html
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+    confidence: MEDIUM
+    rule-origin-note: published from /src/aws-kinesis-stream-unencrypted.yml in None
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-kinesis-stream-unencrypted.aws-kinesis-stream-unencrypted
+    shortlink: https://sg.run/KZ0L
+    semgrep.dev:
+      rule:
+        r_id: 52199
+        rv_id: 1263728
+        rule_id: 8GU72N
+        version_id: pZT037O
+        url: https://semgrep.dev/playground/r/pZT037O/terraform.aws.security.aws-kinesis-stream-unencrypted.aws-kinesis-stream-unencrypted
+        origin: community
+- id: terraform.aws.security.aws-lambda-permission-unrestricted-source-arn.aws-lambda-permission-unrestricted-source-arn
+  patterns:
+  - pattern: "resource \"aws_lambda_permission\" $ANYTHING {\n  ...\n  principal =\
+      \ \"$PRINCIPAL\"\n  ...\n}\n"
+  - pattern-not: "resource \"aws_lambda_permission\" $ANYTHING {\n  ...\n  source_arn\
+      \ = ...\n  ...\n}\n"
+  - metavariable-regex:
+      metavariable: $PRINCIPAL
+      regex: .*[.]amazonaws[.]com$
+  message: The AWS Lambda permission has an AWS service principal but does not specify
+    a source ARN. If you grant permission to a service principal without specifying
+    the source, other accounts could potentially configure resources in their account
+    to invoke your Lambda function. Set the source_arn value to the ARN of the AWS
+    resource that invokes the function, eg. an S3 bucket, CloudWatch Events Rule,
+    API Gateway, or SNS topic.
+  languages:
+  - hcl
+  severity: ERROR
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    references:
+    - https://cwe.mitre.org/data/definitions/732.html
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_permission
+    - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-permission.html
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/terraform.aws.security.aws-lambda-permission-unrestricted-source-arn.aws-lambda-permission-unrestricted-source-arn
+    shortlink: https://sg.run/kOP7
+    semgrep.dev:
+      rule:
+        r_id: 54772
+        rv_id: 1263732
+        rule_id: OrU9Ox
+        version_id: 1QTypq5
+        url: https://semgrep.dev/playground/r/1QTypq5/terraform.aws.security.aws-lambda-permission-unrestricted-source-arn.aws-lambda-permission-unrestricted-source-arn
+        origin: community
+- id: terraform.aws.security.aws-lambda-x-ray-tracing-not-active.aws-lambda-x-ray-tracing-not-active
+  patterns:
+  - pattern: "resource \"aws_lambda_function\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not: "resource \"aws_lambda_function\" $ANYTHING {\n  ...\n  tracing_config\
+      \ {\n    ...\n    mode = \"Active\"\n    ...\n  }\n  ...\n}\n"
+  message: The AWS Lambda function does not have active X-Ray tracing enabled. X-Ray
+    tracing enables end-to-end debugging and analysis of all function activity. This
+    makes it easier to trace the flow of logs and identify bottlenecks, slow downs
+    and timeouts.
+  languages:
+  - hcl
+  severity: INFO
+  metadata:
+    category: security
+    technology:
+    - aws
+    - terraform
+    owasp:
+    - A09:2021 Security Logging and Monitoring Failures
+    cwe:
+    - 'CWE-778: Insufficient Logging'
+    references:
+    - https://cwe.mitre.org/data/definitions/778.html
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_function#mode
+    - https://docs.aws.amazon.com/lambda/latest/dg/services-xray.html
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: LOW
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Insufficient Logging
+    source: https://semgrep.dev/r/terraform.aws.security.aws-lambda-x-ray-tracing-not-active.aws-lambda-x-ray-tracing-not-active
+    shortlink: https://sg.run/wO2Y
+    semgrep.dev:
+      rule:
+        r_id: 54773
+        rv_id: 946713
+        rule_id: eqUl1O
+        version_id: QkTZ6vk
+        url: https://semgrep.dev/playground/r/QkTZ6vk/terraform.aws.security.aws-lambda-x-ray-tracing-not-active.aws-lambda-x-ray-tracing-not-active
+        origin: community
+- id: terraform.aws.security.aws-sqs-queue-policy-wildcard-principal.aws-sqs-queue-policy-wildcard-principal
+  patterns:
+  - pattern-either:
+    - pattern-inside: "resource \"aws_sqs_queue_policy\" $ANYTHING {\n  ...\n}\n"
+    - pattern-inside: "resource \"aws_sqs_queue\" $ANYTHING {\n  ...\n}\n"
+  - pattern-either:
+    - patterns:
+      - pattern: policy = "$JSONPOLICY"
+      - metavariable-pattern:
+          metavariable: $JSONPOLICY
+          language: json
+          patterns:
+          - pattern-not-inside: '{..., "Effect": "Deny", ...}
+
+              '
+          - pattern-either:
+            - pattern: '{..., "Principal": "*", ...}
+
+                '
+            - pattern: '{..., "Principal": [..., "*", ...], ...}
+
+                '
+            - pattern: '{..., "Principal": { "AWS": "*" }, ...}
+
+                '
+            - pattern: '{..., "Principal": { "AWS": [..., "*", ...] }, ...}
+
+                '
+          - pattern-not-inside: "{..., \n\"Condition\": {\n  \"ArnNotLike\": {\n \
+              \   \"aws:SourceArn\": ...\n  }\n},\n...}\n"
+          - pattern-not-inside: "{..., \n\"Condition\": {\n  \"ArnLike\": {\n    \"\
+              aws:SourceArn\": ...\n  }\n},\n...}\n"
+          - pattern-not-inside: "{..., \n\"Condition\": {\n  \"ArnEquals\": {\n  \
+              \  \"aws:SourceArn\": ...\n  }\n},\n...}\n"
+          - pattern-not-inside: "{..., \n\"Condition\": {\n  \"StringNotLike\": {\n\
+              \    \"aws:PrincipalARN\": ...\n  }\n},\n...}\n"
+    - patterns:
+      - pattern-inside: policy = jsonencode(...)
+      - pattern-not-inside: '{..., Effect = "Deny", ...}
+
+          '
+      - pattern-not-inside: "{..., \nCondition = {\n  ArnNotLike = {\n    \"aws:SourceArn\"\
+          \ = ...\n  }\n},\n...}\n"
+      - pattern-not-inside: "{..., \nCondition = {\n  ArnLike = {\n    \"aws:SourceArn\"\
+          \ = ...\n  }\n},\n...}\n"
+      - pattern-not-inside: "{..., \nCondition = {\n  ArnEquals = {\n    \"aws:SourceArn\"\
+          \ = ...\n  }\n}\n...}\n"
+      - pattern-not-inside: "{..., \nCondition = {\n  StringNotLike = {\n    \"aws:PrincipalARN\"\
+          \ = ...\n  }\n},\n...}\n"
+      - pattern-either:
+        - pattern: '{..., Principal = "*", ...}
+
+            '
+        - pattern: '{..., Principal = [..., "*", ...], ...}
+
+            '
+        - pattern: '{..., Principal = { AWS = "*" }, ...}
+
+            '
+        - pattern: '{..., Principal = { AWS = [..., "*", ...] }, ...}
+
+            '
+  message: Wildcard used in your SQS queue policy principal. This grants access to
+    all users, including anonymous users (public access). Unless you explicitly require
+    anyone on the internet to be able to read or write to your queue, limit principals,
+    actions and resources to what you need according to least privilege.
+  metadata:
+    category: security
+    technology:
+    - aws
+    - terraform
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    references:
+    - https://cwe.mitre.org/data/definitions/732.html
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sqs_queue
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sqs_queue_policy
+    - https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-security-best-practices.html
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    rule-origin-note: published from /src/aws-sqs-queue-policy-wildcard-principal.yml
+      in None
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/terraform.aws.security.aws-sqs-queue-policy-wildcard-principal.aws-sqs-queue-policy-wildcard-principal
+    shortlink: https://sg.run/z3eW
+    semgrep.dev:
+      rule:
+        r_id: 53517
+        rv_id: 1263741
+        rule_id: PeUl9d
+        version_id: O9TpxgE
+        url: https://semgrep.dev/playground/r/O9TpxgE/terraform.aws.security.aws-sqs-queue-policy-wildcard-principal.aws-sqs-queue-policy-wildcard-principal
+        origin: community
+  languages:
+  - hcl
+  severity: ERROR
+- id: terraform.azure.security.azure-mysql-encryption-enabled.azure-mysql-encryption-enabled
+  message: Ensure that MySQL server enables infrastructure encryption
+  patterns:
+  - pattern: resource
+  - pattern-inside: 'resource "azurerm_mysql_server" "..." {
+
+      ...
+
+      }
+
+      '
+  - pattern-not-inside: 'resource "azurerm_mysql_server" "..." {
+
+      ...
+
+      infrastructure_encryption_enabled = true
+
+      ...
+
+      }
+
+      '
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    cwe:
+    - 'CWE-320: CWE CATEGORY: Key Management Errors'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.azure.security.azure-mysql-encryption-enabled.azure-mysql-encryption-enabled
+    shortlink: https://sg.run/Dd6Y
+    semgrep.dev:
+      rule:
+        r_id: 23996
+        rv_id: 946840
+        rule_id: oqUloL
+        version_id: yeT0vBn
+        url: https://semgrep.dev/playground/r/yeT0vBn/terraform.azure.security.azure-mysql-encryption-enabled.azure-mysql-encryption-enabled
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.azure.security.azure-mysql-mintls-version.azure-mysql-mintls-version
+  message: Ensure MySQL is using the latest version of TLS encryption
+  patterns:
+  - pattern-either:
+    - pattern: '"TLS1_0"
+
+        '
+    - pattern: '"TLS1_1"
+
+        '
+  - pattern-inside: ssl_minimal_tls_version_enforced = ...
+  - pattern-inside: '$RESOURCE "azurerm_mysql_server" "..." {
+
+      ...
+
+      }
+
+      '
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.azure.security.azure-mysql-mintls-version.azure-mysql-mintls-version
+    shortlink: https://sg.run/WR44
+    semgrep.dev:
+      rule:
+        r_id: 23997
+        rv_id: 1263785
+        rule_id: zdU8NN
+        version_id: O9TpxWE
+        url: https://semgrep.dev/playground/r/O9TpxWE/terraform.azure.security.azure-mysql-mintls-version.azure-mysql-mintls-version
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.azure.security.azure-key-no-expiration-date.azure-key-no-expiration-date
+  message: Ensure that the expiration date is set on all keys
+  patterns:
+  - pattern: resource
+  - pattern-not-inside: 'resource "azurerm_key_vault_key" "..." {
+
+      ...
+
+      expiration_date = "..."
+
+      ...
+
+      }
+
+      '
+  - pattern-inside: 'resource "azurerm_key_vault_key" "..." {
+
+      ...
+
+      }
+
+      '
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    cwe:
+    - 'CWE-320: CWE CATEGORY: Key Management Errors'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: LOW
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.azure.security.azure-key-no-expiration-date.azure-key-no-expiration-date
+    shortlink: https://sg.run/J1vw
+    semgrep.dev:
+      rule:
+        r_id: 23990
+        rv_id: 946834
+        rule_id: 0oUlgp
+        version_id: pZTNGkl
+        url: https://semgrep.dev/playground/r/pZTNGkl/terraform.azure.security.azure-key-no-expiration-date.azure-key-no-expiration-date
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.azure.security.azure-mssql-service-mintls-version.azure-mssql-service-mintls-version
+  message: Ensure MSSQL is using the latest version of TLS encryption
+  patterns:
+  - pattern-either:
+    - pattern: '"1.0"
+
+        '
+    - pattern: '"1.1"
+
+        '
+  - pattern-inside: minimum_tls_version = ...
+  - pattern-inside: '$RESOURCE "azurerm_mssql_server" "..." {
+
+      ...
+
+      }
+
+      '
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.azure.security.azure-mssql-service-mintls-version.azure-mssql-service-mintls-version
+    shortlink: https://sg.run/B1lW
+    semgrep.dev:
+      rule:
+        r_id: 23995
+        rv_id: 1263784
+        rule_id: 6JUJG8
+        version_id: xyTjzeR
+        url: https://semgrep.dev/playground/r/xyTjzeR/terraform.azure.security.azure-mssql-service-mintls-version.azure-mssql-service-mintls-version
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.azure.security.keyvault.keyvault-ensure-secret-expires.keyvault-ensure-secret-expires
+  message: Ensure that the expiration date is set on all secrets
+  patterns:
+  - pattern: resource
+  - pattern-not-inside: 'resource "azurerm_key_vault_secret" "..." {
+
+      ...
+
+      expiration_date = "..."
+
+      ...
+
+      }
+
+      '
+  - pattern-not-inside: "resource \"azurerm_key_vault_secret\" \"...\" {\n  ...\n\
+      \  expiration_date = ...\n  ...\n}\n"
+  - pattern-inside: 'resource "azurerm_key_vault_secret" "..." {
+
+      ...
+
+      }
+
+      '
+  metadata:
+    cwe:
+    - 'CWE-262: Not Using Password Aging'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/key_vault_secret#expiration_date
+    - https://docs.microsoft.com/en-us/azure/key-vault/secrets/about-secrets
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authentication
+    source: https://semgrep.dev/r/terraform.azure.security.keyvault.keyvault-ensure-secret-expires.keyvault-ensure-secret-expires
+    shortlink: https://sg.run/d2RZ
+    semgrep.dev:
+      rule:
+        r_id: 15134
+        rv_id: 1028693
+        rule_id: QrUdNy
+        version_id: 0bTl7og
+        url: https://semgrep.dev/playground/r/0bTl7og/terraform.azure.security.keyvault.keyvault-ensure-secret-expires.keyvault-ensure-secret-expires
+        origin: community
+  languages:
+  - hcl
+  severity: INFO
+- id: terraform.azure.security.keyvault.keyvault-purge-enabled.keyvault-purge-enabled
+  message: Key vault should have purge protection enabled
+  patterns:
+  - pattern: resource
+  - pattern-not-inside: "resource \"azurerm_key_vault\" \"...\" {\n...\n purge_protection_enabled\
+      \ = true\n...\n}\n"
+  - pattern-either:
+    - pattern-inside: 'resource "azurerm_key_vault" "..." {
+
+        ...
+
+        }
+
+        '
+    - pattern-inside: "resource \"azurerm_key_vault\" \"...\" {\n...\n  purge_protection_enabled\
+        \ = false\n...\n}\n"
+  metadata:
+    cwe:
+    - 'CWE-693: Protection Mechanism Failure'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/key_vault#purge_protection_enabled
+    - https://docs.microsoft.com/en-us/azure/key-vault/general/soft-delete-overview#purge-protection
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/terraform.azure.security.keyvault.keyvault-purge-enabled.keyvault-purge-enabled
+    shortlink: https://sg.run/Z4xD
+    semgrep.dev:
+      rule:
+        r_id: 15135
+        rv_id: 946865
+        rule_id: 3qUjw9
+        version_id: RGTAPQ7
+        url: https://semgrep.dev/playground/r/RGTAPQ7/terraform.azure.security.keyvault.keyvault-purge-enabled.keyvault-purge-enabled
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.azure.security.keyvault.keyvault-ensure-key-expires.keyvault-ensure-key-expires
+  message: Ensure that the expiration date is set on all keys
+  patterns:
+  - pattern: resource
+  - pattern-not-inside: 'resource "azurerm_key_vault_key" "..." {
+
+      ...
+
+      expiration_date = "..."
+
+      ...
+
+      }
+
+      '
+  - pattern-inside: 'resource "azurerm_key_vault_key" "..." {
+
+      ...
+
+      }
+
+      '
+  metadata:
+    cwe:
+    - 'CWE-262: Not Using Password Aging'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/key_vault_key#expiration_date
+    - https://docs.microsoft.com/en-us/powershell/module/az.keyvault/update-azkeyvaultkey?view=azps-5.8.0#example-1--modify-a-key-to-enable-it--and-set-the-expiration-date-and-tags
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authentication
+    source: https://semgrep.dev/r/terraform.azure.security.keyvault.keyvault-ensure-key-expires.keyvault-ensure-key-expires
+    shortlink: https://sg.run/vq9A
+    semgrep.dev:
+      rule:
+        r_id: 15133
+        rv_id: 946863
+        rule_id: gxUgXq
+        version_id: 5PT94PR
+        url: https://semgrep.dev/playground/r/5PT94PR/terraform.azure.security.keyvault.keyvault-ensure-key-expires.keyvault-ensure-key-expires
+        origin: community
+  languages:
+  - hcl
+  severity: INFO
+- id: terraform.azure.security.appservice.appservice-use-secure-tls-policy.appservice-use-secure-tls-policy
+  message: Detected an AppService that was not configured to use TLS 1.2. Add `site_config.min_tls_version
+    = "1.2"` in your resource block.
+  patterns:
+  - pattern: min_tls_version = $ANYTHING
+  - pattern-inside: "resource \"azurerm_app_service\" \"$NAME\" {\n  ...\n}\n"
+  - pattern-not-inside: min_tls_version = "1.2"
+  metadata:
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/app_service#min_tls_version
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: HIGH
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.azure.security.appservice.appservice-use-secure-tls-policy.appservice-use-secure-tls-policy
+    shortlink: https://sg.run/AXRp
+    semgrep.dev:
+      rule:
+        r_id: 15106
+        rv_id: 1263759
+        rule_id: YGUDbZ
+        version_id: RGT0L4x
+        url: https://semgrep.dev/playground/r/RGT0L4x/terraform.azure.security.appservice.appservice-use-secure-tls-policy.appservice-use-secure-tls-policy
+        origin: community
+  languages:
+  - hcl
+  severity: ERROR
+- id: terraform.azure.security.appservice.appservice-enable-http2.appservice-enable-http2
+  message: Use the latest version of HTTP to ensure you are benefiting from security
+    fixes. Add `http2_enabled = true` to your appservice resource block
+  patterns:
+  - pattern: resource
+  - pattern-not-inside: "resource \"azurerm_app_service\" \"...\" {\n...\n  site_config\
+      \ {\n    ...\n    http2_enabled = true\n    ...\n  }\n...\n}\n"
+  - pattern-either:
+    - pattern-inside: 'resource "azurerm_app_service" "..." {
+
+        ...
+
+        }
+
+        '
+    - pattern-inside: "resource \"azurerm_app_service\" \"...\" {\n...\n  site_config\
+        \ {\n    ...\n    http2_enabled = false\n    ...\n  }\n...\n}\n"
+  metadata:
+    cwe:
+    - 'CWE-444: Inconsistent Interpretation of HTTP Requests (''HTTP Request/Response
+      Smuggling'')'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/app_service#http2_enabled
+    owasp:
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Validation
+    source: https://semgrep.dev/r/terraform.azure.security.appservice.appservice-enable-http2.appservice-enable-http2
+    shortlink: https://sg.run/5DkA
+    semgrep.dev:
+      rule:
+        r_id: 15103
+        rv_id: 1263756
+        rule_id: KxU7LJ
+        version_id: JdTzx98
+        url: https://semgrep.dev/playground/r/JdTzx98/terraform.azure.security.appservice.appservice-enable-http2.appservice-enable-http2
+        origin: community
+  languages:
+  - hcl
+  severity: INFO
+- id: terraform.azure.security.appservice.azure-appservice-https-only.azure-appservice-https-only
+  message: Ensure web app redirects all HTTP traffic to HTTPS in Azure App Service
+    Slot
+  patterns:
+  - pattern: resource
+  - pattern-not-inside: 'resource "azurerm_app_service" "..." {
+
+      ...
+
+      https_only = true
+
+      ...
+
+      }
+
+      '
+  - pattern-inside: 'resource "azurerm_app_service" "..." {
+
+      ...
+
+      }
+
+      '
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-319: Cleartext Transmission of Sensitive Information'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Mishandled Sensitive Information
+    source: https://semgrep.dev/r/terraform.azure.security.appservice.azure-appservice-https-only.azure-appservice-https-only
+    shortlink: https://sg.run/1g9w
+    semgrep.dev:
+      rule:
+        r_id: 23966
+        rv_id: 1263766
+        rule_id: x8UZRP
+        version_id: qkTR78q
+        url: https://semgrep.dev/playground/r/qkTR78q/terraform.azure.security.appservice.azure-appservice-https-only.azure-appservice-https-only
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.azure.security.appservice.appservice-require-client-cert.appservice-require-client-cert
+  message: Detected an AppService that was not configured to use a client certificate.
+    Add `client_cert_enabled = true` in your resource block.
+  patterns:
+  - pattern: resource
+  - pattern-not-inside: "resource \"azurerm_app_service\" \"...\" {\n...\n  client_cert_enabled\
+      \ = true\n...\n}\n"
+  - pattern-either:
+    - pattern-inside: 'resource "azurerm_app_service" "..." {
+
+        ...
+
+        }
+
+        '
+    - pattern-inside: "resource \"azurerm_app_service\" \"...\" {\n...\n  client_cert_enabled\
+        \ = false\n...\n}\n"
+  metadata:
+    cwe:
+    - 'CWE-295: Improper Certificate Validation'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/app_service#client_cert_enabled
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A07:2021 - Identification and Authentication Failures
+    - A07:2025 - Authentication Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authentication
+    source: https://semgrep.dev/r/terraform.azure.security.appservice.appservice-require-client-cert.appservice-require-client-cert
+    shortlink: https://sg.run/RX1O
+    semgrep.dev:
+      rule:
+        r_id: 15105
+        rv_id: 1263758
+        rule_id: lBU8D6
+        version_id: GxTkedE
+        url: https://semgrep.dev/playground/r/GxTkedE/terraform.azure.security.appservice.appservice-require-client-cert.appservice-require-client-cert
+        origin: community
+  languages:
+  - hcl
+  severity: INFO
+- id: terraform.azure.security.appservice.appservice-enable-https-only.appservice-enable-https-only
+  message: By default, clients can connect to App Service by using both HTTP or HTTPS.
+    HTTP should be disabled enabling the HTTPS Only setting.
+  patterns:
+  - pattern: resource
+  - pattern-not-inside: "resource \"azurerm_app_service\" \"...\" {\n...\n  https_only\
+      \ = true\n...\n}\n"
+  - pattern-either:
+    - pattern-inside: 'resource "azurerm_app_service" "..." {
+
+        ...
+
+        }
+
+        '
+    - pattern-inside: "resource \"azurerm_app_service\" \"...\" {\n...\n  https_only\
+        \ = false\n...\n}\n"
+  metadata:
+    cwe:
+    - 'CWE-319: Cleartext Transmission of Sensitive Information'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/app_service#https_only
+    - https://docs.microsoft.com/en-us/azure/app-service/configure-ssl-bindings#enforce-https
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Mishandled Sensitive Information
+    source: https://semgrep.dev/r/terraform.azure.security.appservice.appservice-enable-https-only.appservice-enable-https-only
+    shortlink: https://sg.run/GOKp
+    semgrep.dev:
+      rule:
+        r_id: 15104
+        rv_id: 1263757
+        rule_id: qNUXwx
+        version_id: 5PTo1gg
+        url: https://semgrep.dev/playground/r/5PTo1gg/terraform.azure.security.appservice.appservice-enable-https-only.appservice-enable-https-only
+        origin: community
+  languages:
+  - hcl
+  severity: ERROR
+- id: terraform.azure.security.appservice.azure-appservice-min-tls-version.azure-appservice-min-tls-version
+  message: Ensure web app is using the latest version of TLS encryption
+  patterns:
+  - pattern-either:
+    - pattern: '"1.0"
+
+        '
+    - pattern: '"1.1"
+
+        '
+  - pattern-inside: min_tls_version = ...
+  - pattern-inside: '$RESOURCE "azurerm_app_service" "..." {
+
+      ...
+
+      }
+
+      '
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.azure.security.appservice.azure-appservice-min-tls-version.azure-appservice-min-tls-version
+    shortlink: https://sg.run/rDwn
+    semgrep.dev:
+      rule:
+        r_id: 23969
+        rv_id: 1263769
+        rule_id: v8UNL7
+        version_id: 6xT29gv
+        url: https://semgrep.dev/playground/r/6xT29gv/terraform.azure.security.appservice.azure-appservice-min-tls-version.azure-appservice-min-tls-version
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.azure.security.appservice.azure-appservice-detailed-errormessages-enabled.azure-appservice-detailed-errormessages-enabled
+  message: Ensure that App service enables detailed error messages
+  patterns:
+  - pattern: resource
+  - pattern-not-inside: "resource \"azurerm_app_service\" \"...\" {\n...\nlogs {\n\
+      \  ...\n  detailed_error_messages_enabled = true\n  ...\n}\n...\n}\n"
+  - pattern-inside: 'resource "azurerm_app_service" "..." {
+
+      ...
+
+      }
+
+      '
+  metadata:
+    owasp:
+    - A10:2017 - Insufficient Logging & Monitoring
+    - A09:2021 - Security Logging and Monitoring Failures
+    - A09:2025 - Security Logging & Alerting Failures
+    cwe:
+    - 'CWE-778: Insufficient Logging'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://owasp.org/Top10/A09_2021-Security_Logging_and_Monitoring_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: LOW
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Insufficient Logging
+    source: https://semgrep.dev/r/terraform.azure.security.appservice.azure-appservice-detailed-errormessages-enabled.azure-appservice-detailed-errormessages-enabled
+    shortlink: https://sg.run/pA1g
+    semgrep.dev:
+      rule:
+        r_id: 23962
+        rv_id: 1263762
+        rule_id: bwU1Eg
+        version_id: DkTRbr5
+        url: https://semgrep.dev/playground/r/DkTRbr5/terraform.azure.security.appservice.azure-appservice-detailed-errormessages-enabled.azure-appservice-detailed-errormessages-enabled
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.azure.security.appservice.appservice-authentication-enabled.appservice-authentication-enabled
+  message: Enabling authentication ensures that all communications in the application
+    are authenticated. The `auth_settings` block needs to be filled out with the appropriate
+    auth backend settings
+  patterns:
+  - pattern: resource
+  - pattern-not-inside: "resource \"azurerm_app_service\" \"...\" {\n...\n  auth_settings\
+      \ {\n    ...\n    enabled = true\n    ...\n  }\n...\n}\n"
+  - pattern-either:
+    - pattern-inside: 'resource "azurerm_app_service" "..." {
+
+        ...
+
+        }
+
+        '
+    - pattern-inside: "resource \"azurerm_app_service\" \"...\" {\n...\n  auth_settings\
+        \ {\n    ...\n    enabled = false\n    ...\n  }\n...\n}\n"
+  metadata:
+    cwe:
+    - 'CWE-287: Improper Authentication'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/app_service#auth_settings
+    owasp:
+    - A02:2017 - Broken Authentication
+    - A07:2021 - Identification and Authentication Failures
+    - A07:2025 - Authentication Failures
+    cwe2022-top25: true
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authentication
+    source: https://semgrep.dev/r/terraform.azure.security.appservice.appservice-authentication-enabled.appservice-authentication-enabled
+    shortlink: https://sg.run/JxYw
+    semgrep.dev:
+      rule:
+        r_id: 15102
+        rv_id: 1263755
+        rule_id: 0oU23p
+        version_id: PkTR3P8
+        url: https://semgrep.dev/playground/r/PkTR3P8/terraform.azure.security.appservice.appservice-authentication-enabled.appservice-authentication-enabled
+        origin: community
+  languages:
+  - hcl
+  severity: ERROR
+- id: terraform.azure.security.storage.storage-use-secure-tls-policy.storage-use-secure-tls-policy
+  message: 'Azure Storage currently supports three versions of the TLS protocol: 1.0,
+    1.1, and 1.2. Azure Storage uses TLS 1.2 on public HTTPS endpoints, but TLS 1.0
+    and TLS 1.1 are still supported for backward compatibility. This check will warn
+    if the minimum TLS is not set to TLS1_2.'
+  patterns:
+  - pattern-either:
+    - pattern-inside: "resource \"azurerm_storage_account\" \"...\" {\n  ...\n  min_tls_version\
+        \ = \"$ANYTHING\"\n  ...\n}\n"
+    - pattern-inside: "resource \"azurerm_storage_account\" \"...\" {\n  ...\n}\n"
+  - pattern-not-inside: "resource \"azurerm_storage_account\" \"...\" {\n  ...\n \
+      \ min_tls_version = \"TLS1_2\"\n  ...\n}\n"
+  metadata:
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/storage_account#min_tls_version
+    - https://docs.microsoft.com/en-us/azure/storage/common/transport-layer-security-configure-minimum-version
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.azure.security.storage.storage-use-secure-tls-policy.storage-use-secure-tls-policy
+    shortlink: https://sg.run/KXD7
+    semgrep.dev:
+      rule:
+        r_id: 15155
+        rv_id: 1263807
+        rule_id: AbUQdL
+        version_id: WrTqKpv
+        url: https://semgrep.dev/playground/r/WrTqKpv/terraform.azure.security.storage.storage-use-secure-tls-policy.storage-use-secure-tls-policy
+        origin: community
+  languages:
+  - hcl
+  severity: ERROR
+- id: terraform.gcp.security.gcp-cloud-storage-logging.gcp-cloud-storage-logging
+  patterns:
+  - pattern: "resource \"google_storage_bucket\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not-inside: "resource \"google_storage_bucket\" $ANYTHING {\n  ...\n \
+      \ logging {\n      log_bucket = ...\n  }          \n  ...\n}\n"
+  message: Ensure bucket logs access.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    owasp:
+    - A10:2017 - Insufficient Logging & Monitoring
+    - A09:2021 - Security Logging and Monitoring Failures
+    - A09:2025 - Security Logging & Alerting Failures
+    cwe:
+    - 'CWE-778: Insufficient Logging'
+    technology:
+    - terraform
+    - gcp
+    category: security
+    references:
+    - https://docs.bridgecrew.io/docs/google-cloud-policy-index
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: LOW
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Insufficient Logging
+    source: https://semgrep.dev/r/terraform.gcp.security.gcp-cloud-storage-logging.gcp-cloud-storage-logging
+    shortlink: https://sg.run/5g5D
+    semgrep.dev:
+      rule:
+        r_id: 32303
+        rv_id: 1263813
+        rule_id: gxUrdg
+        version_id: JdTzxRN
+        url: https://semgrep.dev/playground/r/JdTzxRN/terraform.gcp.security.gcp-cloud-storage-logging.gcp-cloud-storage-logging
+        origin: community
+- id: terraform.gcp.security.gcp-sql-public-database.gcp-sql-public-database
+  patterns:
+  - pattern: resource
+  - pattern-either:
+    - pattern-inside: "resource \"google_sql_database_instance\" \"...\" {\n...\n\
+        ip_configuration {\n  ...\n  authorized_networks {\n    ...\n    value = \"\
+        0.0.0.0/0\"\n    ...\n  }\n  ...\n}\n...\n}\n"
+    - pattern-inside: "resource \"google_sql_database_instance\" \"...\" {\n...\n\
+        ip_configuration {\n  ...\n  dynamic \"authorized_networks\" {\n    ...\n\
+        \    content {\n      ...\n      value = \"0.0.0.0/0\"\n      ...\n    }\n\
+        \    ...\n  }\n  ...\n}\n...\n}\n"
+  message: Ensure that Cloud SQL database Instances are not open to the world
+  metadata:
+    owasp:
+    - A05:2017 - Broken Access Control
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    cwe:
+    - 'CWE-1220: Insufficient Granularity of Access Control'
+    category: security
+    technology:
+    - terraform
+    - gcp
+    references:
+    - https://owasp.org/Top10/A01_2021-Broken_Access_Control
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Other
+    source: https://semgrep.dev/r/terraform.gcp.security.gcp-sql-public-database.gcp-sql-public-database
+    shortlink: https://sg.run/0Xv5
+    semgrep.dev:
+      rule:
+        r_id: 33710
+        rv_id: 1263876
+        rule_id: d8U7Ll
+        version_id: jQTn559
+        url: https://semgrep.dev/playground/r/jQTn559/terraform.gcp.security.gcp-sql-public-database.gcp-sql-public-database
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.gcp.security.gcp-dns-key-specs-rsasha1.gcp-dns-key-specs-rsasha1
+  patterns:
+  - pattern: resource
+  - pattern-inside: "resource \"google_dns_managed_zone\" \"...\" {\n...\ndnssec_config\
+      \ {\n    ...\n    default_key_specs {\n        ...\n        algorithm  = \"\
+      rsasha1\"\n        key_type   = \"zoneSigning\"\n        ...\n    }\n    ...\n\
+      }\n...\n}\n"
+  - pattern-inside: "resource \"google_dns_managed_zone\" \"...\" {\n...\ndnssec_config\
+      \ {\n    ...\n    default_key_specs {\n        ...\n        algorithm  = \"\
+      rsasha1\"\n        key_type   = \"keySigning\"\n        ...\n    }\n    ...\n\
+      }\n...\n}\n"
+  message: "Ensure that RSASHA1 is not used for the zone-signing and key-signing keys\
+    \ in Cloud DNS DNSSEC\t"
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    category: security
+    technology:
+    - terraform
+    - gcp
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.gcp.security.gcp-dns-key-specs-rsasha1.gcp-dns-key-specs-rsasha1
+    shortlink: https://sg.run/bKKW
+    semgrep.dev:
+      rule:
+        r_id: 33670
+        rv_id: 1263837
+        rule_id: 7KUZZb
+        version_id: bZT53oD
+        url: https://semgrep.dev/playground/r/bZT53oD/terraform.gcp.security.gcp-dns-key-specs-rsasha1.gcp-dns-key-specs-rsasha1
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.gcp.security.gcp-sql-database-require-ssl.gcp-sql-database-require-ssl
+  patterns:
+  - pattern: resource
+  - pattern-inside: "resource \"google_sql_database_instance\" \"...\" {\n    ...\n\
+      }\n"
+  - pattern-not-inside: "resource \"google_sql_database_instance\" \"...\" {\n   \
+      \ ...\n    ip_configuration {\n        ...\n        require_ssl = true\n   \
+      \     ...\n    }\n    ...\n}\n"
+  - pattern-not-inside: "resource \"google_sql_database_instance\" \"...\" {\n   \
+      \ ...\n    ip_configuration {\n        ...\n        ssl_mode = ...\n       \
+      \ ...\n    }\n    ...\n}\n"
+  message: Ensure all Cloud SQL database instance requires all incoming connections
+    to use SSL
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    category: security
+    technology:
+    - terraform
+    - gcp
+    references:
+    - https://cloud.google.com/sql/docs/postgres/admin-api/rest/v1/instances#ipconfiguration
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.gcp.security.gcp-sql-database-require-ssl.gcp-sql-database-require-ssl
+    shortlink: https://sg.run/W4Yg
+    semgrep.dev:
+      rule:
+        r_id: 33709
+        rv_id: 1263873
+        rule_id: v8Uod5
+        version_id: pZT033e
+        url: https://semgrep.dev/playground/r/pZT033e/terraform.gcp.security.gcp-sql-database-require-ssl.gcp-sql-database-require-ssl
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.lang.security.s3-unencrypted-bucket.s3-unencrypted-bucket
+  patterns:
+  - pattern: a
+  - pattern: b
+  languages:
+  - hcl
+  severity: INFO
+  message: This rule has been deprecated, as all s3 buckets are encrypted by default
+    with no way to disable it. See https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_server_side_encryption_configuration
+    for more info.
+  metadata:
+    references:
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket#server_side_encryption_configuration
+    - https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-encryption.html
+    cwe:
+    - 'CWE-311: Missing Encryption of Sensitive Data'
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    deprecated: true
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.lang.security.s3-unencrypted-bucket.s3-unencrypted-bucket
+    shortlink: https://sg.run/Jezw
+    semgrep.dev:
+      rule:
+        r_id: 16202
+        rv_id: 1263901
+        rule_id: 3qU62L
+        version_id: JdTzxjN
+        url: https://semgrep.dev/playground/r/JdTzxjN/terraform.lang.security.s3-unencrypted-bucket.s3-unencrypted-bucket
+        origin: community
+- id: terraform.lang.security.rds-insecure-password-storage-in-source-code.rds-insecure-password-storage-in-source-code
+  pattern-either:
+  - patterns:
+    - pattern: password = "..."
+    - pattern-inside: "resource \"aws_db_instance\" \"...\" {\n  ...\n}\n"
+  - patterns:
+    - pattern: master_password = "..."
+    - pattern-inside: "resource \"aws_rds_cluster\" \"...\" {\n  ...\n}\n"
+  languages:
+  - hcl
+  severity: WARNING
+  message: RDS instance or cluster with hardcoded credentials in source code. It is
+    recommended to pass the credentials at runtime, or generate random credentials
+    using the random_password resource.
+  metadata:
+    references:
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/db_instance#master_password
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/rds_cluster#master_password
+    - https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/password
+    cwe:
+    - 'CWE-522: Insufficiently Protected Credentials'
+    category: security
+    technology:
+    - terraform
+    - aws
+    - secrets
+    owasp:
+    - A02:2017 - Broken Authentication
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.lang.security.rds-insecure-password-storage-in-source-code.rds-insecure-password-storage-in-source-code
+    shortlink: https://sg.run/x4qA
+    semgrep.dev:
+      rule:
+        r_id: 15830
+        rv_id: 1263896
+        rule_id: OrUl6W
+        version_id: gETB77b
+        url: https://semgrep.dev/playground/r/gETB77b/terraform.lang.security.rds-insecure-password-storage-in-source-code.rds-insecure-password-storage-in-source-code
+        origin: community
+- id: terraform.lang.security.ec2-imdsv1-optional.ec2-imdsv1-optional
+  languages:
+  - hcl
+  message: AWS EC2 Instance allowing use of the IMDSv1
+  metadata:
+    cwe:
+    - 'CWE-918: Server-Side Request Forgery (SSRF)'
+    references:
+    - https://aws.amazon.com/blogs/security/defense-in-depth-open-firewalls-reverse-proxies-ssrf-vulnerabilities-ec2-instance-metadata-service
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/instance#metadata-options
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A10:2021 - Server-Side Request Forgery (SSRF)
+    - A01:2025 - Broken Access Control
+    cwe2022-top25: true
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Server-Side Request Forgery (SSRF)
+    source: https://semgrep.dev/r/terraform.lang.security.ec2-imdsv1-optional.ec2-imdsv1-optional
+    shortlink: https://sg.run/J3BQ
+    semgrep.dev:
+      rule:
+        r_id: 11302
+        rv_id: 1263884
+        rule_id: GdU0eA
+        version_id: w8TRooE
+        url: https://semgrep.dev/playground/r/w8TRooE/terraform.lang.security.ec2-imdsv1-optional.ec2-imdsv1-optional
+        origin: community
+  pattern-either:
+  - patterns:
+    - pattern: http_tokens = "optional"
+    - pattern-inside: 'metadata_options { ... }
+
+        '
+  - patterns:
+    - pattern: "resource \"aws_instance\" \"$NAME\" {\n  ...\n}\n"
+    - pattern-not: "resource \"aws_instance\" \"$NAME\" {\n  ...\n  metadata_options\
+        \ {\n    ...\n    http_tokens = \"required\"\n    ...\n  }\n  ...\n}\n"
+    - pattern-not: "resource \"aws_instance\" \"$NAME\" {\n  ...\n  metadata_options\
+        \ {\n    ...\n    http_tokens = \"optional\"\n    ...\n  }\n  ...\n}\n"
+    - pattern-not: "resource \"aws_instance\" \"$NAME\" {\n  ...\n  metadata_options\
+        \ {\n    ...\n    http_endpoint = \"disabled\"\n    ...\n  }\n  ...\n}\n"
+  severity: ERROR
+- id: terraform.aws.security.aws-elasticsearch-insecure-tls-version.aws-elasticsearch-insecure-tls-version
+  pattern: "resource \"aws_elasticsearch_domain\" $ANYTHING {\n  ...\n  domain_endpoint_options\
+    \ {\n    ...\n    enforce_https = true\n    tls_security_policy = \"Policy-Min-TLS-1-0-2019-07\"\
+    \n    ...\n  }\n  ...\n}\n"
+  message: Detected an AWS Elasticsearch domain using an insecure version of TLS.
+    To fix this, set "tls_security_policy" equal to "Policy-Min-TLS-1-2-2019-07".
+  languages:
+  - terraform
+  severity: WARNING
+  metadata:
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    category: security
+    technology:
+    - aws
+    - terraform
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-elasticsearch-insecure-tls-version.aws-elasticsearch-insecure-tls-version
+    shortlink: https://sg.run/PYlq
+    semgrep.dev:
+      rule:
+        r_id: 19045
+        rv_id: 1263718
+        rule_id: YGUle7
+        version_id: DkTRbA5
+        url: https://semgrep.dev/playground/r/DkTRbA5/terraform.aws.security.aws-elasticsearch-insecure-tls-version.aws-elasticsearch-insecure-tls-version
+        origin: community
+- id: terraform.aws.security.aws-ec2-has-public-ip.aws-ec2-has-public-ip
+  patterns:
+  - pattern-either:
+    - pattern: "resource \"aws_instance\" $ANYTHING {\n  ...\n  associate_public_ip_address\
+        \ = true\n  ...\n}\n"
+    - pattern: "resource \"aws_launch_template\" $ANYTHING {\n  ...\n  network_interfaces\
+        \ {\n    ...\n    associate_public_ip_address = true\n    ...\n  }\n  ...\n\
+        }\n"
+  message: EC2 instances should not have a public IP address attached in order to
+    block public access to the instances. To fix this, set your `associate_public_ip_address`
+    to `"false"`.
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A05:2017 - Broken Access Control
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    cwe:
+    - 'CWE-1220: Insufficient Granularity of Access Control'
+    references:
+    - https://owasp.org/Top10/A01_2021-Broken_Access_Control
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Other
+    source: https://semgrep.dev/r/terraform.aws.security.aws-ec2-has-public-ip.aws-ec2-has-public-ip
+    shortlink: https://sg.run/08rv
+    semgrep.dev:
+      rule:
+        r_id: 17354
+        rv_id: 1263709
+        rule_id: 8GUA2n
+        version_id: qkTR73G
+        url: https://semgrep.dev/playground/r/qkTR73G/terraform.aws.security.aws-ec2-has-public-ip.aws-ec2-has-public-ip
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.aws.security.aws-insecure-redshift-ssl-configuration.aws-insecure-redshift-ssl-configuration
+  patterns:
+  - pattern: "resource \"aws_redshift_parameter_group\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_redshift_parameter_group\" $ANYTHING {\n \
+      \ ...\n  parameter {\n    name  = \"require_ssl\"\n    value = \"true\"\n  }\n\
+      \  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_redshift_parameter_group\" $ANYTHING {\n \
+      \ ...\n  parameter {\n    name  = \"require_ssl\"\n    value = true\n  }\n \
+      \ ...\n}\n"
+  message: Detected an AWS Redshift configuration with a SSL disabled. To fix this,
+    set your `require_ssl` to `"true"`.
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-insecure-redshift-ssl-configuration.aws-insecure-redshift-ssl-configuration
+    shortlink: https://sg.run/yPYx
+    semgrep.dev:
+      rule:
+        r_id: 17368
+        rv_id: 1263727
+        rule_id: 0oUrOj
+        version_id: zyTb27A
+        url: https://semgrep.dev/playground/r/zyTb27A/terraform.aws.security.aws-insecure-redshift-ssl-configuration.aws-insecure-redshift-ssl-configuration
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.aws.security.insecure-load-balancer-tls-version.insecure-load-balancer-tls-version
+  patterns:
+  - pattern-either:
+    - patterns:
+      - pattern: ssl_policy = $ANYTHING
+      - pattern-not-regex: ELBSecurityPolicy-TLS13-1-[23]-[(Res)0-9-]+
+      - pattern-not-regex: ELBSecurityPolicy-FS-1-2-[(Res)0-9-]+
+    - patterns:
+      - pattern: protocol = "HTTP"
+      - pattern-not-inside: "resource $ANYTHING $NAME {\n  ...\n  default_action {\n\
+          \    ...\n    redirect {\n      ...\n      protocol = \"HTTPS\"\n      ...\n\
+          \    }\n    ...\n  }\n  ...\n}\n"
+  - pattern-inside: "resource $RESOURCE $X {\n  ...\n}\n"
+  - metavariable-pattern:
+      metavariable: $RESOURCE
+      patterns:
+      - pattern-either:
+        - pattern: '"aws_lb_listener"
+
+            '
+        - pattern: '"aws_alb_listener"
+
+            '
+  message: Detected an AWS load balancer with an insecure TLS version. TLS versions
+    less than 1.2 are considered insecure because they can be broken. To fix this,
+    set your `ssl_policy` to `"ELBSecurityPolicy-TLS13-1-2-Res-2021-06"`, or include
+    a default action to redirect to HTTPS.
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    references:
+    - https://www.ietf.org/rfc/rfc5246.txt
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.insecure-load-balancer-tls-version.insecure-load-balancer-tls-version
+    shortlink: https://sg.run/187G
+    semgrep.dev:
+      rule:
+        r_id: 14966
+        rv_id: 1263747
+        rule_id: 2ZUP9K
+        version_id: ExTEx0y
+        url: https://semgrep.dev/playground/r/ExTEx0y/terraform.aws.security.insecure-load-balancer-tls-version.insecure-load-balancer-tls-version
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.aws.security.wildcard-assume-role.wildcard-assume-role
+  patterns:
+  - pattern-inside: "resource \"aws_iam_role\" $NAME {\n  ...\n}\n"
+  - pattern: assume_role_policy = "$STATEMENT"
+  - metavariable-pattern:
+      metavariable: $STATEMENT
+      language: json
+      patterns:
+      - pattern-inside: '{..., "Effect": "Allow", ..., "Action": "sts:AssumeRole",
+          ...}
+
+          '
+      - pattern: '"Principal": {..., "AWS": "*", ...}
+
+          '
+  message: 'Detected wildcard access granted to sts:AssumeRole. This means anyone
+    with your AWS account ID and the name of the role can assume the role. Instead,
+    limit to a specific identity in your account, like this: `arn:aws:iam::<account_id>:root`.'
+  metadata:
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    category: security
+    technology:
+    - aws
+    references:
+    - https://rhinosecuritylabs.com/aws/assume-worst-aws-assume-role-enumeration/
+    owasp:
+    - A06:2017 - Security Misconfiguration
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/terraform.aws.security.wildcard-assume-role.wildcard-assume-role
+    shortlink: https://sg.run/LXWr
+    semgrep.dev:
+      rule:
+        r_id: 15139
+        rv_id: 1263749
+        rule_id: 5rUL1P
+        version_id: LjTkg8D
+        url: https://semgrep.dev/playground/r/LjTkg8D/terraform.aws.security.wildcard-assume-role.wildcard-assume-role
+        origin: community
+  languages:
+  - hcl
+  severity: ERROR
+- id: terraform.aws.security.aws-dynamodb-table-unencrypted.aws-dynamodb-table-unencrypted
+  patterns:
+  - pattern: "resource \"aws_dynamodb_table\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_dynamodb_table\" $ANYTHING {\n  ...\n  server_side_encryption\
+      \ {\n    enabled = true\n    kms_key_arn = ...\n  }\n  ...\n}\n"
+  message: By default, AWS DynamoDB Table is encrypted using AWS-managed keys. However,
+    for added security, it's recommended to configure your own AWS KMS encryption
+    key to protect your data in the DynamoDB table. You can either create a new aws_kms_key
+    resource or use the ARN of an existing key in your AWS account to do so.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    technology:
+    - aws
+    - terraform
+    category: security
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-dynamodb-table-unencrypted.aws-dynamodb-table-unencrypted
+    shortlink: https://sg.run/Ay4p
+    semgrep.dev:
+      rule:
+        r_id: 17350
+        rv_id: 1263707
+        rule_id: nJUGe2
+        version_id: 0bTKzj8
+        url: https://semgrep.dev/playground/r/0bTKzj8/terraform.aws.security.aws-dynamodb-table-unencrypted.aws-dynamodb-table-unencrypted
+        origin: community
+- id: terraform.aws.security.aws-lambda-environment-credentials.aws-lambda-environment-credentials
+  patterns:
+  - pattern-inside: "resource \"$ANYTING\" $ANYTHING {\n  ...\n  environment {\n \
+      \   variables = {\n      ...\n    }\n  }\n  ...\n}\n"
+  - pattern-either:
+    - pattern-inside: 'AWS_ACCESS_KEY_ID = "$Y"
+
+        '
+    - pattern-regex: '(?<![A-Z0-9])[A-Z0-9]{20}(?![A-Z0-9])
+
+        '
+    - pattern-inside: 'AWS_SECRET_ACCESS_KEY = "$Y"
+
+        '
+    - pattern-regex: '(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])
+
+        '
+  - focus-metavariable: $Y
+  message: A hard-coded credential was detected. It is not recommended to store credentials
+    in source-code, as this risks secrets being leaked and used by either an internal
+    or external malicious adversary. It is recommended to use environment variables
+    to securely provide credentials or retrieve credentials from a secure vault or
+    HSM (Hardware Security Module).
+  metadata:
+    category: security
+    references:
+    - https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    technology:
+    - aws
+    - terraform
+    - secrets
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: HIGH
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-lambda-environment-credentials.aws-lambda-environment-credentials
+    shortlink: https://sg.run/wZqY
+    semgrep.dev:
+      rule:
+        r_id: 17373
+        rv_id: 1263731
+        rule_id: JDU6gj
+        version_id: jQTn573
+        url: https://semgrep.dev/playground/r/jQTn573/terraform.aws.security.aws-lambda-environment-credentials.aws-lambda-environment-credentials
+        origin: community
+  languages:
+  - hcl
+  severity: ERROR
+- id: terraform.aws.security.aws-cloudfront-insecure-tls.aws-insecure-cloudfront-distribution-tls-version
+  patterns:
+  - pattern: "resource \"aws_cloudfront_distribution\" $ANYTHING {\n  ...\n  viewer_certificate\
+      \ {\n    ...\n  }\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_cloudfront_distribution\" $ANYTHING {\n  ...\n\
+      \  viewer_certificate {\n    ...\n    minimum_protocol_version = \"TLSv1.2_2018\"\
+      \n    ...\n  }\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_cloudfront_distribution\" $ANYTHING {\n  ...\n\
+      \  viewer_certificate {\n    ...\n    minimum_protocol_version = \"TLSv1.2_2019\"\
+      \n    ...\n  }\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_cloudfront_distribution\" $ANYTHING {\n  ...\n\
+      \  viewer_certificate {\n    ...\n    minimum_protocol_version = \"TLSv1.2_2021\"\
+      \n    ...\n  }\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_cloudfront_distribution\" $ANYTHING {\n  ...\n\
+      \  viewer_certificate {\n    ...\n    minimum_protocol_version = \"TLSv1.2_2025\"\
+      \n    ...\n  }\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_cloudfront_distribution\" $ANYTHING {\n  ...\n\
+      \  viewer_certificate {\n    ...\n    minimum_protocol_version = \"TLSv1.3_2025\"\
+      \n    ...\n  }\n  ...\n}\n"
+  message: Detected an AWS CloudFront Distribution with an insecure TLS version. TLS
+    versions less than 1.2 are considered insecure because they can be broken. To
+    fix this, set your `minimum_protocol_version` to `"TLSv1.2_2018", "TLSv1.2_2019",
+    "TLSv1.2_2021", "TLSv1.2_2025" or "TLSv1.3_2025"`.
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-cloudfront-insecure-tls.aws-insecure-cloudfront-distribution-tls-version
+    shortlink: https://sg.run/Q6o4
+    semgrep.dev:
+      rule:
+        r_id: 17342
+        rv_id: 1263700
+        rule_id: kxU6A8
+        version_id: 5PTo1bY
+        url: https://semgrep.dev/playground/r/5PTo1bY/terraform.aws.security.aws-cloudfront-insecure-tls.aws-insecure-cloudfront-distribution-tls-version
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.aws.security.aws-rds-backup-no-retention.aws-rds-backup-no-retention
+  patterns:
+  - pattern-either:
+    - pattern: "resource \"aws_rds_cluster\" $ANYTHING {\n  ...\n  backup_retention_period\
+        \ = 0\n  ...\n}\n"
+    - pattern: "resource \"aws_db_instance\" $ANYTHING {\n  ...\n  backup_retention_period\
+        \ = 0\n  ...\n}\n"
+  message: The AWS RDS has no retention. Missing retention can cause losing important
+    event information. To fix this, set a `backup_retention_period`.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    cwe:
+    - 'CWE-320: CWE CATEGORY: Key Management Errors'
+    technology:
+    - aws
+    - terraform
+    category: security
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-rds-backup-no-retention.aws-rds-backup-no-retention
+    shortlink: https://sg.run/OyYB
+    semgrep.dev:
+      rule:
+        r_id: 17375
+        rv_id: 946719
+        rule_id: GdUzwQ
+        version_id: GxTP0Lq
+        url: https://semgrep.dev/playground/r/GxTP0Lq/terraform.aws.security.aws-rds-backup-no-retention.aws-rds-backup-no-retention
+        origin: community
+- id: terraform.aws.security.aws-codebuild-project-unencrypted.aws-codebuild-project-unencrypted
+  patterns:
+  - pattern: "resource \"aws_codebuild_project\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_codebuild_project\" $ANYTHING {\n  ...\n \
+      \ encryption_key = ...\n  ...\n}\n"
+  message: The AWS CodeBuild Project is unencrypted. The AWS KMS encryption key protects
+    projects in the CodeBuild. To create your own, create a aws_kms_key resource or
+    use the ARN string of a key in your account.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    cwe:
+    - 'CWE-320: CWE CATEGORY: Key Management Errors'
+    technology:
+    - aws
+    - terraform
+    category: security
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-codebuild-project-unencrypted.aws-codebuild-project-unencrypted
+    shortlink: https://sg.run/5yxA
+    semgrep.dev:
+      rule:
+        r_id: 17347
+        rv_id: 946669
+        rule_id: v8U4kG
+        version_id: K3TJbNr
+        url: https://semgrep.dev/playground/r/K3TJbNr/terraform.aws.security.aws-codebuild-project-unencrypted.aws-codebuild-project-unencrypted
+        origin: community
+- id: terraform.aws.security.aws-iam-admin-policy-ssoadmin.aws-iam-admin-policy-ssoadmin
+  patterns:
+  - pattern-inside: "resource \"aws_ssoadmin_permission_set_inline_policy\" $ANYTHING\
+      \ {\n  ...\n}\n"
+  - pattern: inline_policy = "$STATEMENT"
+  - metavariable-pattern:
+      metavariable: $STATEMENT
+      language: json
+      patterns:
+      - pattern-not-inside: '{..., "Effect": "Deny", ...}
+
+          '
+      - pattern-either:
+        - pattern: '{..., "Action": [..., "*", ...], "Resource": [..., "*", ...],
+            ...}
+
+            '
+        - pattern: '{..., "Action": "*", "Resource": "*", ...}
+
+            '
+        - pattern: '{..., "Action": "*", "Resource": [...], ...}
+
+            '
+        - pattern: '{..., "Action": [...], "Resource": "*", ...}
+
+            '
+  message: Detected admin access granted in your policy. This means anyone with this
+    policy can perform administrative actions. Instead, limit actions and resources
+    to what you need according to least privilege.
+  metadata:
+    category: security
+    technology:
+    - aws
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    references:
+    - https://cwe.mitre.org/data/definitions/732.html
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/terraform.aws.security.aws-iam-admin-policy-ssoadmin.aws-iam-admin-policy-ssoadmin
+    shortlink: https://sg.run/jzgY
+    semgrep.dev:
+      rule:
+        r_id: 17365
+        rv_id: 1263724
+        rule_id: BYUzY5
+        version_id: YDTZe9q
+        url: https://semgrep.dev/playground/r/YDTZe9q/terraform.aws.security.aws-iam-admin-policy-ssoadmin.aws-iam-admin-policy-ssoadmin
+        origin: community
+  languages:
+  - hcl
+  severity: ERROR
+- id: terraform.aws.security.aws-elasticsearch-nodetonode-encryption.aws-elasticsearch-nodetonode-encryption-not-enabled
+  patterns:
+  - pattern-either:
+    - pattern: "resource \"aws_elasticsearch_domain\" $ANYTHING {\n  ...\n  node_to_node_encryption\
+        \ {\n    ...\n    enabled = false\n    ...\n  }\n  ...\n}\n"
+    - pattern: "resource \"aws_elasticsearch_domain\" $ANYTHING {\n  ...\n  cluster_config\
+        \ {\n    ...\n    instance_count = $COUNT\n    ...\n  }\n}\n"
+  - pattern-not-inside: "resource \"aws_elasticsearch_domain\" $ANYTHING {\n  ...\n\
+      \  cluster_config {\n    ...\n    instance_count = $COUNT\n    ...\n  }\n  node_to_node_encryption\
+      \ {\n    ...\n    enabled = true\n    ...\n  }\n}\n"
+  - metavariable-comparison:
+      metavariable: $COUNT
+      comparison: $COUNT > 1
+  message: "Ensure all Elasticsearch has node-to-node encryption enabled.\t"
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-elasticsearch-nodetonode-encryption.aws-elasticsearch-nodetonode-encryption-not-enabled
+    shortlink: https://sg.run/lp3y
+    semgrep.dev:
+      rule:
+        r_id: 17357
+        rv_id: 1263719
+        rule_id: 3qU6J7
+        version_id: WrTqK0v
+        url: https://semgrep.dev/playground/r/WrTqK0v/terraform.aws.security.aws-elasticsearch-nodetonode-encryption.aws-elasticsearch-nodetonode-encryption-not-enabled
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.aws.security.aws-kms-no-rotation.aws-kms-no-rotation
+  patterns:
+  - pattern-either:
+    - pattern: "resource \"aws_kms_key\" $ANYTHING {\n  ...\n  enable_key_rotation\
+        \ = false\n  ...\n}\n"
+    - pattern: "resource \"aws_kms_key\" $ANYTHING {\n  ...\n  customer_master_key_spec\
+        \ = \"SYMMETRIC_DEFAULT\"\n  enable_key_rotation = false\n  ...\n}\n"
+    - pattern: "resource \"aws_kms_key\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_kms_key\" $ANYTHING {\n  ...\n  enable_key_rotation\
+      \ = true\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_kms_key\" $ANYTHING {\n  ...\n  customer_master_key_spec\
+      \ = \"RSA_2096\"\n  ...\n}\n"
+  message: The AWS KMS has no rotation. Missing rotation can cause leaked key to be
+    used by attackers. To fix this, set a `enable_key_rotation`.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    technology:
+    - aws
+    - terraform
+    category: security
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-kms-no-rotation.aws-kms-no-rotation
+    shortlink: https://sg.run/kz47
+    semgrep.dev:
+      rule:
+        r_id: 17372
+        rv_id: 1263730
+        rule_id: PeU0L3
+        version_id: X0Tzy67
+        url: https://semgrep.dev/playground/r/X0Tzy67/terraform.aws.security.aws-kms-no-rotation.aws-kms-no-rotation
+        origin: community
+- id: terraform.aws.security.aws-ebs-snapshot-encrypted-with-cmk.aws-ebs-snapshot-encrypted-with-cmk
+  patterns:
+  - pattern: "resource \"aws_ebs_snapshot_copy\" $ANYTHING {\n  ...\n  encrypted =\
+      \ true\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_ebs_snapshot_copy\" $ANYTHING {\n  ...\n \
+      \ encrypted = true\n  kms_key_id = ...\n  ...\n}\n"
+  message: Ensure EBS Snapshot is encrypted at rest using KMS CMKs. CMKs gives you
+    control over the encryption key in terms of access and rotation.
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    cwe:
+    - 'CWE-320: CWE CATEGORY: Key Management Errors'
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-ebs-snapshot-encrypted-with-cmk.aws-ebs-snapshot-encrypted-with-cmk
+    shortlink: https://sg.run/ByPW
+    semgrep.dev:
+      rule:
+        r_id: 17351
+        rv_id: 946677
+        rule_id: EwUqko
+        version_id: A8TJzb0
+        url: https://semgrep.dev/playground/r/A8TJzb0/terraform.aws.security.aws-ebs-snapshot-encrypted-with-cmk.aws-ebs-snapshot-encrypted-with-cmk
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.aws.security.aws-cloudwatch-log-group-no-retention.aws-cloudwatch-log-group-no-retention
+  patterns:
+  - pattern: "resource \"aws_cloudwatch_log_group\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_cloudwatch_log_group\" $ANYTHING {\n  ...\n\
+      \  retention_in_days = ...\n  ...\n}\n"
+  message: The AWS CloudWatch Log Group has no retention. Missing retention in log
+    groups can cause losing important event information.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    cwe:
+    - 'CWE-320: CWE CATEGORY: Key Management Errors'
+    technology:
+    - aws
+    - terraform
+    category: security
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-cloudwatch-log-group-no-retention.aws-cloudwatch-log-group-no-retention
+    shortlink: https://sg.run/4lwl
+    semgrep.dev:
+      rule:
+        r_id: 17344
+        rv_id: 946665
+        rule_id: x8UGBG
+        version_id: BjT1N2B
+        url: https://semgrep.dev/playground/r/BjT1N2B/terraform.aws.security.aws-cloudwatch-log-group-no-retention.aws-cloudwatch-log-group-no-retention
+        origin: community
+- id: terraform.aws.security.aws-db-instance-no-logging.aws-db-instance-no-logging
+  patterns:
+  - pattern: "resource \"aws_db_instance\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_db_instance\" $ANYTHING {\n  ...\n  enabled_cloudwatch_logs_exports\
+      \ = [$SOMETHING, ...]\n  ...\n}\n"
+  message: Database instance has no logging. Missing logs can cause missing important
+    event information.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    cwe:
+    - 'CWE-311: Missing Encryption of Sensitive Data'
+    technology:
+    - aws
+    - terraform
+    category: security
+    references:
+    - https://owasp.org/Top10/A04_2021-Insecure_Design
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: LOW
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-db-instance-no-logging.aws-db-instance-no-logging
+    shortlink: https://sg.run/GyAp
+    semgrep.dev:
+      rule:
+        r_id: 17348
+        rv_id: 1263704
+        rule_id: d8U4RA
+        version_id: BjTkZ6j
+        url: https://semgrep.dev/playground/r/BjTkZ6j/terraform.aws.security.aws-db-instance-no-logging.aws-db-instance-no-logging
+        origin: community
+- id: terraform.aws.security.aws-ebs-unencrypted.aws-ebs-unencrypted
+  patterns:
+  - pattern: "resource \"aws_ebs_encryption_by_default\" $ANYTHING {\n  ...\n  enabled\
+      \ = false\n  ...\n}\n"
+  message: The AWS EBS is unencrypted. The AWS EBS encryption protects data in the
+    EBS.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    cwe:
+    - 'CWE-320: CWE CATEGORY: Key Management Errors'
+    technology:
+    - aws
+    - terraform
+    category: security
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-ebs-unencrypted.aws-ebs-unencrypted
+    shortlink: https://sg.run/Dy5Y
+    semgrep.dev:
+      rule:
+        r_id: 17352
+        rv_id: 946678
+        rule_id: 7KUW7K
+        version_id: BjT1N2v
+        url: https://semgrep.dev/playground/r/BjT1N2v/terraform.aws.security.aws-ebs-unencrypted.aws-ebs-unencrypted
+        origin: community
+- id: terraform.aws.security.aws-provider-static-credentials.aws-provider-static-credentials
+  patterns:
+  - pattern-inside: "provider \"aws\" {\n...\n    secret_key = \"$SECRET\"\n}\n"
+  - focus-metavariable: $SECRET
+  message: A hard-coded credential was detected. It is not recommended to store credentials
+    in source-code, as this risks secrets being leaked and used by either an internal
+    or external malicious adversary. It is recommended to use environment variables
+    to securely provide credentials or retrieve credentials from a secure vault or
+    HSM (Hardware Security Module).
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    technology:
+    - secrets
+    - aws
+    - terraform
+    category: security
+    cwe:
+    - 'CWE-798: Use of Hard-coded Credentials'
+    references:
+    - https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html
+    owasp:
+    - A07:2021 - Identification and Authentication Failures
+    - A07:2025 - Authentication Failures
+    cwe2022-top25: true
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Hard-coded Secrets
+    source: https://semgrep.dev/r/terraform.aws.security.aws-provider-static-credentials.aws-provider-static-credentials
+    shortlink: https://sg.run/L3kn
+    semgrep.dev:
+      rule:
+        r_id: 16439
+        rv_id: 1263735
+        rule_id: d8U4n0
+        version_id: rxTAK76
+        url: https://semgrep.dev/playground/r/rxTAK76/terraform.aws.security.aws-provider-static-credentials.aws-provider-static-credentials
+        origin: community
+- id: terraform.aws.security.aws-insecure-api-gateway-tls-version.aws-insecure-api-gateway-tls-version
+  patterns:
+  - pattern-either:
+    - pattern: "resource \"aws_api_gateway_domain_name\" $ANYTHING {\n    ...\n  \
+        \  security_policy = \"...\"\n    ...\n}\n"
+    - pattern: "resource \"aws_apigatewayv2_domain_name\" $ANYTHING {\n    ...\n \
+        \   domain_name_configuration {...}\n    ...\n}\n"
+  - pattern-not: "resource \"aws_api_gateway_domain_name\" $ANYTHING {\n        ...\n\
+      \        security_policy = \"TLS_1_2\"\n        ...\n    }\n"
+  - pattern-not: "resource \"aws_apigatewayv2_domain_name\" $ANYTHING {\n        ...\n\
+      \        domain_name_configuration {\n            ...\n            security_policy\
+      \ = \"TLS_1_2\"\n            ...\n        }\n    }\n"
+  message: Detected AWS API Gateway to be using an insecure version of TLS. To fix
+    this issue make sure to set "security_policy" equal to "TLS_1_2".
+  languages:
+  - terraform
+  severity: WARNING
+  metadata:
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    category: security
+    technology:
+    - aws
+    - terraform
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-insecure-api-gateway-tls-version.aws-insecure-api-gateway-tls-version
+    shortlink: https://sg.run/p98J
+    semgrep.dev:
+      rule:
+        r_id: 18818
+        rv_id: 1263726
+        rule_id: v8UOle
+        version_id: o5TbD8k
+        url: https://semgrep.dev/playground/r/o5TbD8k/terraform.aws.security.aws-insecure-api-gateway-tls-version.aws-insecure-api-gateway-tls-version
+        origin: community
+- id: terraform.aws.security.aws-efs-filesystem-encrypted-with-cmk.aws-efs-filesystem-encrypted-with-cmk
+  patterns:
+  - pattern: "resource \"aws_efs_file_system\" $ANYTHING {\n  ...\n  encrypted  =\
+      \ true\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_efs_file_system\" $ANYTHING {\n  ...\n  encrypted\
+      \  = true\n  kms_key_id = ...\n  ...\n}\n"
+  message: Ensure EFS filesystem is encrypted at rest using KMS CMKs. CMKs gives you
+    control over the encryption key in terms of access and rotation.
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    cwe:
+    - 'CWE-320: CWE CATEGORY: Key Management Errors'
+    references:
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-efs-filesystem-encrypted-with-cmk.aws-efs-filesystem-encrypted-with-cmk
+    shortlink: https://sg.run/Kk07
+    semgrep.dev:
+      rule:
+        r_id: 17355
+        rv_id: 946690
+        rule_id: gxUJ4n
+        version_id: 2KTYbWy
+        url: https://semgrep.dev/playground/r/2KTYbWy/terraform.aws.security.aws-efs-filesystem-encrypted-with-cmk.aws-efs-filesystem-encrypted-with-cmk
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.aws.security.aws-iam-admin-policy.aws-iam-admin-policy
+  patterns:
+  - pattern-inside: "resource \"aws_iam_policy\" $ANYTHING {\n  ...\n}\n"
+  - pattern: policy = "$STATEMENT"
+  - metavariable-pattern:
+      metavariable: $STATEMENT
+      language: json
+      patterns:
+      - pattern-not-inside: '{..., "Effect": "Deny", ...}
+
+          '
+      - pattern-either:
+        - pattern: '{..., "Action": [..., "*", ...], "Resource": [..., "*", ...],
+            ...}
+
+            '
+        - pattern: '{..., "Action": "*", "Resource": "*", ...}
+
+            '
+        - pattern: '{..., "Action": "*", "Resource": [...], ...}
+
+            '
+        - pattern: '{..., "Action": [...], "Resource": "*", ...}
+
+            '
+  message: Detected admin access granted in your policy. This means anyone with this
+    policy can perform administrative actions. Instead, limit actions and resources
+    to what you need according to least privilege.
+  metadata:
+    category: security
+    technology:
+    - aws
+    - terraform
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    references:
+    - https://cwe.mitre.org/data/definitions/732.html
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/terraform.aws.security.aws-iam-admin-policy.aws-iam-admin-policy
+    shortlink: https://sg.run/1zbw
+    semgrep.dev:
+      rule:
+        r_id: 17366
+        rv_id: 1263725
+        rule_id: DbUx8l
+        version_id: 6xT29Pv
+        url: https://semgrep.dev/playground/r/6xT29Pv/terraform.aws.security.aws-iam-admin-policy.aws-iam-admin-policy
+        origin: community
+  languages:
+  - hcl
+  severity: ERROR
+- id: terraform.aws.security.aws-kms-key-wildcard-principal.aws-kms-key-wildcard-principal
+  patterns:
+  - pattern-inside: "resource \"aws_kms_key\" $ANYTHING {\n  ...\n}\n"
+  - pattern: policy = "$STATEMENT"
+  - metavariable-pattern:
+      metavariable: $STATEMENT
+      language: json
+      patterns:
+      - pattern-not-inside: '{..., "Effect": "Deny", ...}
+
+          '
+      - pattern-either:
+        - pattern: '{..., "Principal": "*", "Action": "kms:*", "Resource": "*", ...}
+
+            '
+        - pattern: '{..., "Principal": [..., "*", ...], "Action": "kms:*", "Resource":
+            "*", ...}
+
+            '
+        - pattern: '{..., "Principal": { "AWS": "*" }, "Action": "kms:*", "Resource":
+            "*", ...}
+
+            '
+        - pattern: '{..., "Principal": { "AWS": [..., "*", ...] }, "Action": "kms:*",
+            "Resource": "*", ...}
+
+            '
+  message: Detected wildcard access granted in your KMS key. This means anyone with
+    this policy can perform administrative actions over the keys. Instead, limit principals,
+    actions and resources to what you need according to least privilege.
+  metadata:
+    category: security
+    technology:
+    - aws
+    - terraform
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    references:
+    - https://cwe.mitre.org/data/definitions/732.html
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/terraform.aws.security.aws-kms-key-wildcard-principal.aws-kms-key-wildcard-principal
+    shortlink: https://sg.run/Nwlp
+    semgrep.dev:
+      rule:
+        r_id: 17371
+        rv_id: 1263729
+        rule_id: lBUWPD
+        version_id: 2KTv2J4
+        url: https://semgrep.dev/playground/r/2KTv2J4/terraform.aws.security.aws-kms-key-wildcard-principal.aws-kms-key-wildcard-principal
+        origin: community
+  languages:
+  - hcl
+  severity: ERROR
+- id: terraform.aws.security.aws-glacier-vault-any-principal.aws-glacier-vault-any-principal
+  patterns:
+  - pattern-inside: "resource \"aws_glacier_vault\" $ANYTHING {\n  ...\n}\n"
+  - pattern: access_policy = "$STATEMENT"
+  - metavariable-pattern:
+      metavariable: $STATEMENT
+      language: json
+      patterns:
+      - pattern-inside: '{..., "Effect": "Allow", ...}
+
+          '
+      - pattern-either:
+        - pattern: '"Principal": "*"
+
+            '
+        - pattern: '"Principal": {..., "AWS": "*", ...}
+
+            '
+        - pattern-inside: '"Principal": {..., "AWS": ..., ...}
+
+            '
+        - pattern-regex: '(^\"arn:aws:iam::\*:(.*)\"$)
+
+            '
+  message: 'Detected wildcard access granted to Glacier Vault. This means anyone within
+    your AWS account ID can perform actions on Glacier resources. Instead, limit to
+    a specific identity in your account, like this: `arn:aws:iam::<account_id>:<identity>`.'
+  metadata:
+    category: security
+    technology:
+    - aws
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    references:
+    - https://cwe.mitre.org/data/definitions/732.html
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/terraform.aws.security.aws-glacier-vault-any-principal.aws-glacier-vault-any-principal
+    shortlink: https://sg.run/XN9K
+    semgrep.dev:
+      rule:
+        r_id: 17364
+        rv_id: 1263723
+        rule_id: AbUeYK
+        version_id: l4TJRGB
+        url: https://semgrep.dev/playground/r/l4TJRGB/terraform.aws.security.aws-glacier-vault-any-principal.aws-glacier-vault-any-principal
+        origin: community
+  languages:
+  - hcl
+  severity: ERROR
+- id: terraform.aws.security.aws-ebs-volume-unencrypted.aws-ebs-volume-unencrypted
+  patterns:
+  - pattern: "resource \"aws_ebs_volume\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not: "resource \"aws_ebs_volume\" $ANYTHING {\n  ...\n  encrypted = true\n\
+      \  ...\n}\n"
+  message: The AWS EBS volume is unencrypted. The volume, the disk I/O and any derived
+    snapshots could be read if compromised. Volumes should be encrypted to ensure
+    sensitive data is stored securely.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    cwe:
+    - 'CWE-311: Missing Encryption of Sensitive Data'
+    references:
+    - https://owasp.org/Top10/A04_2021-Insecure_Design
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ebs_volume#encrypted
+    - https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EBSEncryption.html
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.aws.security.aws-ebs-volume-unencrypted.aws-ebs-volume-unencrypted
+    shortlink: https://sg.run/6ZbY
+    semgrep.dev:
+      rule:
+        r_id: 50759
+        rv_id: 1263708
+        rule_id: YGUKl1
+        version_id: K3TKk1Z
+        url: https://semgrep.dev/playground/r/K3TKk1Z/terraform.aws.security.aws-ebs-volume-unencrypted.aws-ebs-volume-unencrypted
+        origin: community
+- id: terraform.aws.security.aws-ec2-launch-template-metadata-service-v1-enabled.aws-ec2-launch-template-metadata-service-v1-enabled
+  patterns:
+  - pattern: "resource \"aws_launch_template\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_launch_template\" $ANYTHING {\n  ...\n  metadata_options\
+      \ {\n    ...\n    http_endpoint = \"disabled\"\n    ...\n  }\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_launch_template\" $ANYTHING {\n  ...\n  metadata_options\
+      \ {\n    ...\n    http_tokens = \"required\"\n    ...\n  }\n  ...\n}\n"
+  message: The EC2 launch template has Instance Metadata Service Version 1 (IMDSv1)
+    enabled. IMDSv2 introduced session authentication tokens which improve security
+    when talking to IMDS. You should either disable IMDS or require the use of IMDSv2.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A07:2021 - Identification and Authentication Failures
+    - A07:2025 - Authentication Failures
+    cwe:
+    - 'CWE-1390: Weak Authentication'
+    references:
+    - https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/launch_configuration#metadata_options
+    - https://aws.amazon.com/blogs/security/defense-in-depth-open-firewalls-reverse-proxies-ssrf-vulnerabilities-ec2-instance-metadata-service
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authentication
+    source: https://semgrep.dev/r/terraform.aws.security.aws-ec2-launch-template-metadata-service-v1-enabled.aws-ec2-launch-template-metadata-service-v1-enabled
+    shortlink: https://sg.run/pg9J
+    semgrep.dev:
+      rule:
+        r_id: 50762
+        rv_id: 1263712
+        rule_id: zdU0Wo
+        version_id: JdTzx88
+        url: https://semgrep.dev/playground/r/JdTzx88/terraform.aws.security.aws-ec2-launch-template-metadata-service-v1-enabled.aws-ec2-launch-template-metadata-service-v1-enabled
+        origin: community
+- id: terraform.aws.security.aws-subnet-has-public-ip-address.aws-subnet-has-public-ip-address
+  patterns:
+  - pattern-either:
+    - pattern: "resource \"aws_subnet\" $ANYTHING {\n  ...\n  map_public_ip_on_launch\
+        \ = true\n  ...\n}\n"
+    - pattern: "resource \"aws_default_subnet\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not: "resource \"aws_default_subnet\" $ANYTHING {\n  ...\n  map_public_ip_on_launch\
+      \ = false\n  ...\n}\n"
+  message: Resources in the AWS subnet are assigned a public IP address. Resources
+    should not be exposed on the public internet, but should have access limited to
+    consumers required for the function of your application. Set `map_public_ip_on_launch`
+    to false so that resources are not publicly-accessible.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    cwe:
+    - 'CWE-1220: Insufficient Granularity of Access Control'
+    references:
+    - https://owasp.org/Top10/A01_2021-Broken_Access_Control/
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/subnet#map_public_ip_on_launch
+    - https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-instance-addressing.html#concepts-public-addresses
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Other
+    source: https://semgrep.dev/r/terraform.aws.security.aws-subnet-has-public-ip-address.aws-subnet-has-public-ip-address
+    shortlink: https://sg.run/XJZw
+    semgrep.dev:
+      rule:
+        r_id: 50764
+        rv_id: 1263744
+        rule_id: 2ZUo79
+        version_id: d6Tyxdb
+        url: https://semgrep.dev/playground/r/d6Tyxdb/terraform.aws.security.aws-subnet-has-public-ip-address.aws-subnet-has-public-ip-address
+        origin: community
+- id: terraform.aws.security.aws-config-aggregator-not-all-regions.aws-config-aggregator-not-all-regions
+  pattern-either:
+  - pattern: "resource \"aws_config_configuration_aggregator\" $ANYTHING {\n  ...\n\
+      \  account_aggregation_source {\n    ...\n    regions = ...\n    ...\n  }\n\
+      \  ...\n}\n"
+  - pattern: "resource \"aws_config_configuration_aggregator\" $ANYTHING {\n  ...\n\
+      \  organization_aggregation_source {\n    ...\n    regions = ...\n    ...\n\
+      \  }\n  ...\n}\n"
+  message: The AWS configuration aggregator does not aggregate all AWS Config region.
+    This may result in unmonitored configuration in regions that are thought to be
+    unused. Configure the aggregator with all_regions for the source.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A09:2021 - Security Logging and Monitoring Failures
+    - A09:2025 - Security Logging & Alerting Failures
+    cwe:
+    - 'CWE-778: Insufficient Logging'
+    references:
+    - https://owasp.org/Top10/A09_2021-Security_Logging_and_Monitoring_Failures/
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: HIGH
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Insufficient Logging
+    source: https://semgrep.dev/r/terraform.aws.security.aws-config-aggregator-not-all-regions.aws-config-aggregator-not-all-regions
+    shortlink: https://sg.run/O6A7
+    semgrep.dev:
+      rule:
+        r_id: 47275
+        rv_id: 1263703
+        rule_id: DbUo7v
+        version_id: A8Tgdwv
+        url: https://semgrep.dev/playground/r/A8Tgdwv/terraform.aws.security.aws-config-aggregator-not-all-regions.aws-config-aggregator-not-all-regions
+        origin: community
+- id: terraform.aws.security.aws-ecr-repository-wildcard-principal.aws-ecr-repository-wildcard-principal
+  patterns:
+  - pattern-inside: "resource \"aws_ecr_repository_policy\" $ANYTHING {\n  ...\n}\n"
+  - pattern-either:
+    - patterns:
+      - pattern: policy = "$JSONPOLICY"
+      - metavariable-pattern:
+          metavariable: $JSONPOLICY
+          language: json
+          patterns:
+          - pattern-not-inside: '{..., "Effect": "Deny", ...}
+
+              '
+          - pattern-either:
+            - pattern: '{..., "Principal": "*", ...}
+
+                '
+            - pattern: '{..., "Principal": [..., "*", ...], ...}
+
+                '
+            - pattern: '{..., "Principal": { "AWS": "*" }, ...}
+
+                '
+            - pattern: '{..., "Principal": { "AWS": [..., "*", ...] }, ...}
+
+                '
+    - patterns:
+      - pattern-inside: policy = jsonencode(...)
+      - pattern-not-inside: '{..., Effect = "Deny", ...}
+
+          '
+      - pattern-either:
+        - pattern: '{..., Principal = "*", ...}
+
+            '
+        - pattern: '{..., Principal = [..., "*", ...], ...}
+
+            '
+        - pattern: '{..., Principal = { AWS = "*" }, ...}
+
+            '
+        - pattern: '{..., Principal = { AWS = [..., "*", ...] }, ...}
+
+            '
+  message: Detected wildcard access granted in your ECR repository policy principal.
+    This grants access to all users, including anonymous users (public access). Instead,
+    limit principals, actions and resources to what you need according to least privilege.
+  metadata:
+    category: security
+    technology:
+    - aws
+    - terraform
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    references:
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ecr_repository_policy
+    - https://docs.aws.amazon.com/lambda/latest/operatorguide/wildcard-permissions-iam.html
+    - https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/monitor-amazon-ecr-repositories-for-wildcard-permissions-using-aws-cloudformation-and-aws-config.html
+    - https://cwe.mitre.org/data/definitions/732.html
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/terraform.aws.security.aws-ecr-repository-wildcard-principal.aws-ecr-repository-wildcard-principal
+    shortlink: https://sg.run/nzqb
+    semgrep.dev:
+      rule:
+        r_id: 48636
+        rv_id: 1263717
+        rule_id: qNUzov
+        version_id: BjTkZ6A
+        url: https://semgrep.dev/playground/r/BjTkZ6A/terraform.aws.security.aws-ecr-repository-wildcard-principal.aws-ecr-repository-wildcard-principal
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.aws.security.aws-ecr-mutable-image-tags.aws-ecr-mutable-image-tags
+  patterns:
+  - pattern: "resource \"aws_ecr_repository\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_ecr_repository\" $ANYTHING {\n  ...\n  image_tag_mutability\
+      \ = \"IMMUTABLE\"\n  ...\n}\n"
+  message: The ECR repository allows tag mutability. Image tags could be overwritten
+    with compromised images. ECR images should be set to IMMUTABLE to prevent code
+    injection through image mutation. This can be done by setting `image_tag_mutability`
+    to IMMUTABLE.
+  languages:
+  - hcl
+  severity: WARNING
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A08:2021 - Software and Data Integrity Failures
+    - A08:2025 - Software or Data Integrity Failures
+    cwe:
+    - 'CWE-345: Insufficient Verification of Data Authenticity'
+    references:
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ecr_repository#image_tag_mutability
+    - https://owasp.org/Top10/A08_2021-Software_and_Data_Integrity_Failures/
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authentication
+    source: https://semgrep.dev/r/terraform.aws.security.aws-ecr-mutable-image-tags.aws-ecr-mutable-image-tags
+    shortlink: https://sg.run/ZEeL
+    semgrep.dev:
+      rule:
+        r_id: 48635
+        rv_id: 1263716
+        rule_id: KxUB4o
+        version_id: A8Tgdwd
+        url: https://semgrep.dev/playground/r/A8Tgdwd/terraform.aws.security.aws-ecr-mutable-image-tags.aws-ecr-mutable-image-tags
+        origin: community
+- id: terraform.aws.security.aws-documentdb-auditing-disabled.aws-documentdb-auditing-disabled
+  patterns:
+  - pattern: "resource \"aws_docdb_cluster\" $ANYTHING {\n  ...\n}\n"
+  - pattern-not-inside: "resource \"aws_docdb_cluster\" $ANYTHING {\n  ...\n  enabled_cloudwatch_logs_exports\
+      \ = [..., \"audit\", ...]\n  ...\n}\n"
+  message: Auditing is not enabled for DocumentDB. To ensure that you are able to
+    accurately audit the usage of your DocumentDB cluster, you should enable auditing
+    and export logs to CloudWatch.
+  languages:
+  - hcl
+  severity: INFO
+  metadata:
+    category: security
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A09:2021 - Security Logging and Monitoring Failures
+    - A09:2025 - Security Logging & Alerting Failures
+    cwe:
+    - 'CWE-778: Insufficient Logging'
+    references:
+    - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/docdb_cluster#enabled_cloudwatch_logs_exports
+    - https://owasp.org/Top10/A09_2021-Security_Logging_and_Monitoring_Failures/
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: LOW
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Insufficient Logging
+    source: https://semgrep.dev/r/terraform.aws.security.aws-documentdb-auditing-disabled.aws-documentdb-auditing-disabled
+    shortlink: https://sg.run/xJYP
+    semgrep.dev:
+      rule:
+        r_id: 48630
+        rv_id: 1263705
+        rule_id: AbU1WN
+        version_id: DkTRbA4
+        url: https://semgrep.dev/playground/r/DkTRbA4/terraform.aws.security.aws-documentdb-auditing-disabled.aws-documentdb-auditing-disabled
+        origin: community
+- id: terraform.aws.security.unrestricted-github-oidc-policy.unrestricted-github-oidc-policy
+  metadata:
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: MEDIUM
+    technology:
+    - terraform
+    - aws
+    owasp:
+    - A05:2017 - Sensitive Data Exposure
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    cwe:
+    - 'CWE-1220: Insufficient Granularity of Access Control'
+    references:
+    - https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services#configuring-the-role-and-trust-policy
+    - https://dagrz.com/writing/aws-security/hacking-github-aws-oidc/
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Other
+    source: https://semgrep.dev/r/terraform.aws.security.unrestricted-github-oidc-policy.unrestricted-github-oidc-policy
+    shortlink: https://sg.run/LWlY
+    semgrep.dev:
+      rule:
+        r_id: 70983
+        rv_id: 1263748
+        rule_id: 7KU3dr
+        version_id: 7ZTE346
+        url: https://semgrep.dev/playground/r/7ZTE346/terraform.aws.security.unrestricted-github-oidc-policy.unrestricted-github-oidc-policy
+        origin: community
+  message: '`$POLICY` is missing a `condition` block which scopes users of this policy
+    to specific GitHub repositories. Without this, `$POLICY` is open to all users
+    on GitHub. Add a `condition` block on the variable `token.actions.githubusercontent.com:sub`
+    which scopes it to prevent this.'
+  languages:
+  - hcl
+  severity: WARNING
+  match:
+    where:
+    - metavariable: $IDENTIFIER
+      regex: .*oidc-provider/token\.actions\.githubusercontent\.com
+    all:
+    - inside: "data \"aws_iam_policy_document\" $POLICY {\n  ...\n}\n"
+    - "statement {\n  ...\n  principals {\n    ...\n    type = \"Federated\"\n   \
+      \ identifiers = [..., $IDENTIFIER, ...]\n  }\n}\n"
+    - not: "statement {\n  ...\n  condition {\n    ...\n    variable = \"token.actions.githubusercontent.com:sub\"\
+        \n  }\n}\n"
+- patterns:
+  - pattern-either:
+    - pattern: "provisioner \"remote-exec\" {\n    ...\n}\n"
+    - pattern: "provisioner \"local-exec\" {\n    ...\n}\n"
+  - pattern-inside: "resource \"aws_instance\" \"...\" {\n    ...\n}\n"
+  id: terraform.aws.security.aws-provisioner-exec.aws-provisioner-exec
+  message: Provisioners are a tool of last resort and should be avoided where possible.
+    Provisioner behavior cannot be mapped by Terraform as part of a plan, and execute
+    arbitrary shell commands by design.
+  languages:
+  - terraform
+  severity: WARNING
+  metadata:
+    category: security
+    owasp:
+    - A03:2021 - Injection
+    - A01:2017 - Injection
+    - A05:2025 - Injection
+    cwe:
+    - 'CWE-77: Improper Neutralization of Special Elements used in a Command (''Command
+      Injection'')'
+    - 'CWE-94: Improper Control of Generation of Code (''Code Injection'')'
+    subcategory:
+    - audit
+    confidence: HIGH
+    likelihood: HIGH
+    impact: MEDIUM
+    technology:
+    - terraform
+    references:
+    - https://developer.hashicorp.com/terraform/language/resources/provisioners/remote-exec
+    - https://developer.hashicorp.com/terraform/language/resources/provisioners/local-exec
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Code Injection
+    - Other
+    source: https://semgrep.dev/r/terraform.aws.security.aws-provisioner-exec.aws-provisioner-exec
+    shortlink: https://sg.run/7EjQ
+    semgrep.dev:
+      rule:
+        r_id: 70982
+        rv_id: 1263736
+        rule_id: EwUxO1
+        version_id: bZT53j1
+        url: https://semgrep.dev/playground/r/bZT53j1/terraform.aws.security.aws-provisioner-exec.aws-provisioner-exec
+        origin: community
+- id: terraform.gcp.security.gcp-sql-database-ssl-insecure-value-postgres-mysql.gcp-sql-database-ssl-insecure-value-postgres-mysql
+  patterns:
+  - pattern-inside: "resource \"google_sql_database_instance\" \"...\" {\n    ...\n\
+      \    database_version = \"$DB\"\n    ...\n}\n"
+  - pattern-inside: "resource \"google_sql_database_instance\" \"...\" {\n    ...\n\
+      \    ip_configuration {\n        ...\n        ssl_mode = $VALUE\n        ...\n\
+      \    }\n    ...\n}\n"
+  - pattern-not-inside: "resource \"google_sql_database_instance\" \"...\" {\n   \
+      \ ...\n    ip_configuration {\n        ...\n        ssl_mode = \"TRUSTED_CLIENT_CERTIFICATE_REQUIRED\"\
+      \n        ...\n    }\n    ...\n}\n"
+  - metavariable-regex:
+      metavariable: $DB
+      regex: .*(MYSQL|POSTGRES).*
+  - focus-metavariable: $VALUE
+  fix: '"TRUSTED_CLIENT_CERTIFICATE_REQUIRED"
+
+    '
+  message: Ensure all Cloud SQL database instance require incoming connections to
+    use SSL. To enable this for PostgresSQL and MySQL, use `ssl_mode="TRUSTED_CLIENT_CERTIFICATE_REQUIRED"`.
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    category: security
+    technology:
+    - terraform
+    - gcp
+    references:
+    - https://cloud.google.com/sql/docs/postgres/admin-api/rest/v1/instances#ipconfiguration
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.gcp.security.gcp-sql-database-ssl-insecure-value-postgres-mysql.gcp-sql-database-ssl-insecure-value-postgres-mysql
+    shortlink: https://sg.run/WANR2
+    semgrep.dev:
+      rule:
+        r_id: 153509
+        rv_id: 1263874
+        rule_id: 5rUdGAz
+        version_id: 2KTv22E
+        url: https://semgrep.dev/playground/r/2KTv22E/terraform.gcp.security.gcp-sql-database-ssl-insecure-value-postgres-mysql.gcp-sql-database-ssl-insecure-value-postgres-mysql
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.gcp.security.gcp-sql-database-ssl-insecure-value-sqlserver.gcp-sql-database-ssl-insecure-value-sqlserver
+  patterns:
+  - pattern-inside: "resource \"google_sql_database_instance\" \"...\" {\n    ...\n\
+      \    database_version = \"$DB\"\n    ...\n}\n"
+  - pattern-inside: "resource \"google_sql_database_instance\" \"...\" {\n    ...\n\
+      \    ip_configuration {\n        ...\n        ssl_mode = $VALUE\n        ...\n\
+      \    }\n    ...\n}\n"
+  - pattern-not-inside: "resource \"google_sql_database_instance\" \"...\" {\n   \
+      \ ...\n    ip_configuration {\n        ...\n        ssl_mode = \"ENCRYPTED_ONLY\"\
+      \n        ...\n    }\n    ...\n}\n"
+  - metavariable-regex:
+      metavariable: $DB
+      regex: .*(SQLSERVER).*
+  - focus-metavariable: $VALUE
+  fix: '"ENCRYPTED_ONLY"
+
+    '
+  message: Ensure all Cloud SQL database instance require incoming connections to
+    use SSL. For SQL Server, `ssl_mode="ENCRYPTED_ONLY"` is the most secure value
+    that is supported.
+  metadata:
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    cwe:
+    - 'CWE-326: Inadequate Encryption Strength'
+    category: security
+    technology:
+    - terraform
+    - gcp
+    references:
+    - https://cloud.google.com/sql/docs/postgres/admin-api/rest/v1/instances#ipconfiguration
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Cryptographic Issues
+    source: https://semgrep.dev/r/terraform.gcp.security.gcp-sql-database-ssl-insecure-value-sqlserver.gcp-sql-database-ssl-insecure-value-sqlserver
+    shortlink: https://sg.run/0o92j
+    semgrep.dev:
+      rule:
+        r_id: 153510
+        rv_id: 1263875
+        rule_id: GdUvX6A
+        version_id: X0Tzyyl
+        url: https://semgrep.dev/playground/r/X0Tzyyl/terraform.gcp.security.gcp-sql-database-ssl-insecure-value-sqlserver.gcp-sql-database-ssl-insecure-value-sqlserver
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: terraform.azure.security.storage.storage-enforce-https.storage-enforce-https
+  message: Detected a Storage that was not configured to deny action by default. Add
+    `enable_https_traffic_only = true` in your resource block.
+  patterns:
+  - pattern-not-inside: "resource \"azurerm_storage_account\" \"...\" {\n...\n  enable_https_traffic_only\
+      \ = true\n...\n}\n"
+  - pattern-inside: "resource \"azurerm_storage_account\" \"...\" {\n...\n  enable_https_traffic_only\
+      \ = false\n...\n}\n"
+  metadata:
+    cwe:
+    - 'CWE-319: Cleartext Transmission of Sensitive Information'
+    category: security
+    technology:
+    - terraform
+    - azure
+    references:
+    - https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/storage_account#enable_https_traffic_only
+    - https://docs.microsoft.com/en-us/azure/storage/common/storage-require-secure-transfer
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Mishandled Sensitive Information
+    source: https://semgrep.dev/r/terraform.azure.security.storage.storage-enforce-https.storage-enforce-https
+    shortlink: https://sg.run/0y9v
+    semgrep.dev:
+      rule:
+        r_id: 15110
+        rv_id: 1263805
+        rule_id: pKUpDA
+        version_id: BjTkZ0A
+        url: https://semgrep.dev/playground/r/BjTkZ0A/terraform.azure.security.storage.storage-enforce-https.storage-enforce-https
+        origin: community
+  languages:
+  - hcl
+  severity: WARNING
+- id: yaml.kubernetes.security.allow-privilege-escalation.allow-privilege-escalation
+  patterns:
+  - pattern-inside: "containers:\n  ...\n"
+  - pattern-inside: "- name: $CONTAINER\n  ...\n"
+  - pattern: 'image: ...
+
+      ...
+
+      '
+  - pattern-inside: "image: ...\n...\n$SC:\n  ...\n"
+  - metavariable-regex:
+      metavariable: $SC
+      regex: ^(securityContext)$
+  - pattern-not-inside: "image: ...\n...\nsecurityContext:\n  ...\n  allowPrivilegeEscalation:\
+      \ $VAL\n"
+  - focus-metavariable: $SC
+  fix: "securityContext:\n  allowPrivilegeEscalation: false #\n"
+  message: In Kubernetes, each pod runs in its own isolated environment with its own
+    set of security policies. However, certain container images may contain `setuid`
+    or `setgid` binaries that could allow an attacker to perform privilege escalation
+    and gain access to sensitive resources. To mitigate this risk, it's recommended
+    to add a `securityContext` to the container in the pod, with the parameter `allowPrivilegeEscalation`
+    set to `false`. This will prevent the container from running any privileged processes
+    and limit the impact of any potential attacks. By adding the `allowPrivilegeEscalation`
+    parameter to your the `securityContext`, you can help to ensure that your containerized
+    applications are more secure and less vulnerable to privilege escalation attacks.
+  metadata:
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#privilege-escalation
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    - https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4-add-no-new-privileges-flag
+    category: security
+    technology:
+    - kubernetes
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/yaml.kubernetes.security.allow-privilege-escalation.allow-privilege-escalation
+    shortlink: https://sg.run/ljp6
+    semgrep.dev:
+      rule:
+        r_id: 10057
+        rv_id: 1263933
+        rule_id: 6JUqEO
+        version_id: jQTn527
+        url: https://semgrep.dev/playground/r/jQTn527/yaml.kubernetes.security.allow-privilege-escalation.allow-privilege-escalation
+        origin: community
+  languages:
+  - yaml
+  severity: WARNING
+- id: yaml.kubernetes.security.exposing-docker-socket-hostpath.exposing-docker-socket-hostpath
+  patterns:
+  - pattern-inside: "volumes:\n  ...\n"
+  - pattern: "hostPath:\n  ...\n  path: /var/run/docker.sock\n"
+  message: Exposing host's Docker socket to containers via a volume. The owner of
+    this socket is root. Giving someone access to it is equivalent to giving unrestricted
+    root access to your host. Remove 'docker.sock' from hostpath to prevent this.
+  metadata:
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    references:
+    - https://kubernetes.io/docs/concepts/storage/volumes/#hostpath
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#volumes-and-file-systems
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1-do-not-expose-the-docker-daemon-socket-even-to-the-containers
+    category: security
+    technology:
+    - kubernetes
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: HIGH
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/yaml.kubernetes.security.exposing-docker-socket-hostpath.exposing-docker-socket-hostpath
+    shortlink: https://sg.run/v0pR
+    semgrep.dev:
+      rule:
+        r_id: 10133
+        rv_id: 947054
+        rule_id: d8Uz6v
+        version_id: nWTpYZe
+        url: https://semgrep.dev/playground/r/nWTpYZe/yaml.kubernetes.security.exposing-docker-socket-hostpath.exposing-docker-socket-hostpath
+        origin: community
+  languages:
+  - yaml
+  severity: WARNING
+- id: yaml.kubernetes.security.privileged-container.privileged-container
+  pattern-either:
+  - patterns:
+    - pattern-inside: "containers:\n  ...\n"
+    - pattern: "image: ...\n...\nsecurityContext:\n  ...\n  privileged: true\n"
+  - patterns:
+    - pattern-inside: "spec:\n  ...\n"
+    - pattern-not-inside: 'image: ...
+
+        ...
+
+        '
+    - pattern: 'privileged: true
+
+        '
+  message: Container or pod is running in privileged mode. This grants the container
+    the equivalent of root capabilities on the host machine. This can lead to container
+    escapes, privilege escalation, and other security concerns. Remove the 'privileged'
+    key to disable this capability.
+  metadata:
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#privileged
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html
+    category: security
+    technology:
+    - kubernetes
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/yaml.kubernetes.security.privileged-container.privileged-container
+    shortlink: https://sg.run/Ygr5
+    semgrep.dev:
+      rule:
+        r_id: 10058
+        rv_id: 947059
+        rule_id: oqUz2p
+        version_id: gETeWJA
+        url: https://semgrep.dev/playground/r/gETeWJA/yaml.kubernetes.security.privileged-container.privileged-container
+        origin: community
+  languages:
+  - yaml
+  severity: WARNING
+- id: yaml.kubernetes.security.run-as-non-root.run-as-non-root
+  patterns:
+  - pattern-inside: "$SPEC:\n  ...\n  containers:\n    ...\n  ...\n"
+  - metavariable-regex:
+      metavariable: $SPEC
+      regex: ^(spec)$
+  - pattern-not-inside: "spec:\n  ...\n  securityContext:\n    ...\n  ...\n"
+  - pattern-inside: "$SPEC:\n  ...\n  containers:\n    ...\n"
+  - pattern-not-inside: "$SPEC:\n  ...\n  containers:\n    ...\n    - name: $NAME\n\
+      \      image: ...\n      ...\n      securityContext:\n        ...\n        runAsNonRoot:\
+      \ $VALUE\n"
+  - focus-metavariable: $SPEC
+  fix: "$SPEC:\n  securityContext:\n    runAsNonRoot: true #\n"
+  message: When running containers in Kubernetes, it's important to ensure that they  are
+    properly secured to prevent privilege escalation attacks.  One potential vulnerability
+    is when a container is allowed to run  applications as the root user, which could
+    allow an attacker to gain  access to sensitive resources. To mitigate this risk,
+    it's recommended to  add a `securityContext` to the container, with the parameter
+    `runAsNonRoot`  set to `true`. This will ensure that the container runs as a non-root
+    user,  limiting the damage that could be caused by any potential attacks. By  adding
+    a `securityContext` to the container in your Kubernetes pod, you can  help to
+    ensure that your containerized applications are more secure and  less vulnerable
+    to privilege escalation attacks.
+  metadata:
+    references:
+    - https://kubernetes.io/blog/2016/08/security-best-practices-kubernetes-deployment/
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-2-set-a-user
+    category: security
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    technology:
+    - kubernetes
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: LOW
+    confidence: LOW
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/yaml.kubernetes.security.run-as-non-root.run-as-non-root
+    shortlink: https://sg.run/dgP5
+    semgrep.dev:
+      rule:
+        r_id: 10134
+        rv_id: 1263940
+        rule_id: ZqUqeK
+        version_id: kbTzGbo
+        url: https://semgrep.dev/playground/r/kbTzGbo/yaml.kubernetes.security.run-as-non-root.run-as-non-root
+        origin: community
+  languages:
+  - yaml
+  severity: INFO
+- id: yaml.kubernetes.security.seccomp-confinement-disabled.seccomp-confinement-disabled
+  patterns:
+  - pattern-inside: "containers:\n  ...\n"
+  - pattern: "image: ...\n...\nsecurityContext:\n  ...\n  seccompProfile: unconfined\n"
+  message: 'Container is explicitly disabling seccomp confinement. This runs the service
+    in an unrestricted state. Remove ''seccompProfile: unconfined'' to prevent this.'
+  metadata:
+    cwe:
+    - 'CWE-284: Improper Access Control'
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#seccomp
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    category: security
+    technology:
+    - kubernetes
+    owasp:
+    - A05:2017 - Broken Access Control
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/yaml.kubernetes.security.seccomp-confinement-disabled.seccomp-confinement-disabled
+    shortlink: https://sg.run/6rgY
+    semgrep.dev:
+      rule:
+        r_id: 10059
+        rv_id: 1263941
+        rule_id: zdUynw
+        version_id: w8TRoL3
+        url: https://semgrep.dev/playground/r/w8TRoL3/yaml.kubernetes.security.seccomp-confinement-disabled.seccomp-confinement-disabled
+        origin: community
+  languages:
+  - yaml
+  severity: WARNING
+- id: yaml.kubernetes.security.skip-tls-verify-cluster.skip-tls-verify-cluster
+  pattern: "cluster:\n  ...\n  insecure-skip-tls-verify: true\n"
+  message: 'Cluster is disabling TLS certificate verification when communicating with
+    the server. This makes your HTTPS connections insecure. Remove the ''insecure-skip-tls-verify:
+    true'' key to secure communication.'
+  metadata:
+    cwe:
+    - 'CWE-319: Cleartext Transmission of Sensitive Information'
+    references:
+    - https://kubernetes.io/docs/reference/config-api/client-authentication.v1beta1/#client-authentication-k8s-io-v1beta1-Cluster
+    category: security
+    technology:
+    - kubernetes
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Mishandled Sensitive Information
+    source: https://semgrep.dev/r/yaml.kubernetes.security.skip-tls-verify-cluster.skip-tls-verify-cluster
+    shortlink: https://sg.run/okyn
+    semgrep.dev:
+      rule:
+        r_id: 10116
+        rv_id: 1263943
+        rule_id: zdUyWx
+        version_id: O9Tpxbo
+        url: https://semgrep.dev/playground/r/O9Tpxbo/yaml.kubernetes.security.skip-tls-verify-cluster.skip-tls-verify-cluster
+        origin: community
+  languages:
+  - yaml
+  severity: WARNING
+- id: yaml.kubernetes.security.skip-tls-verify-service.skip-tls-verify-service
+  pattern: "spec:\n  ...\n  insecureSkipTLSVerify: true\n"
+  message: 'Service is disabling TLS certificate verification when communicating with
+    the server. This makes your HTTPS connections insecure. Remove the ''insecureSkipTLSVerify:
+    true'' key to secure communication.'
+  metadata:
+    cwe:
+    - 'CWE-319: Cleartext Transmission of Sensitive Information'
+    references:
+    - https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#apiservice-v1-apiregistration-k8s-io
+    category: security
+    technology:
+    - kubernetes
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Mishandled Sensitive Information
+    source: https://semgrep.dev/r/yaml.kubernetes.security.skip-tls-verify-service.skip-tls-verify-service
+    shortlink: https://sg.run/zk10
+    semgrep.dev:
+      rule:
+        r_id: 10117
+        rv_id: 1263944
+        rule_id: pKUGXr
+        version_id: e1TyjnR
+        url: https://semgrep.dev/playground/r/e1TyjnR/yaml.kubernetes.security.skip-tls-verify-service.skip-tls-verify-service
+        origin: community
+  languages:
+  - yaml
+  severity: WARNING
+- id: yaml.kubernetes.security.writable-filesystem-container.writable-filesystem-container
+  patterns:
+  - pattern-inside: "containers:\n  ...\n"
+  - pattern-inside: "- name: $CONTAINER\n  ...\n"
+  - pattern: 'image: ...
+
+      ...
+
+      '
+  - pattern-not: "image: ...\n...\nsecurityContext:\n  ...\n  readOnlyRootFilesystem:\
+      \ true\n"
+  - focus-metavariable: $CONTAINER
+  message: 'Container $CONTAINER is running with a writable root filesystem. This
+    may allow malicious applications to download and run additional payloads, or modify
+    container files. If an application inside a container has to save something temporarily
+    consider using a tmpfs. Add ''readOnlyRootFilesystem: true'' to this container
+    to prevent this.'
+  metadata:
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#volumes-and-file-systems
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    - https://blog.atomist.com/security-of-docker-kubernetes/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only
+    category: security
+    technology:
+    - kubernetes
+    cwe2021-top25: true
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: LOW
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/yaml.kubernetes.security.writable-filesystem-container.writable-filesystem-container
+    shortlink: https://sg.run/ZePL
+    semgrep.dev:
+      rule:
+        r_id: 10135
+        rv_id: 1263945
+        rule_id: nJUYn9
+        version_id: vdT06PY
+        url: https://semgrep.dev/playground/r/vdT06PY/yaml.kubernetes.security.writable-filesystem-container.writable-filesystem-container
+        origin: community
+  languages:
+  - yaml
+  severity: WARNING
+- id: yaml.kubernetes.security.hostipc-pod.hostipc-pod
+  patterns:
+  - pattern-inside: "spec:\n  ...\n"
+  - pattern: 'hostIPC: true
+
+      '
+  message: Pod is sharing the host IPC namespace. This allows container processes
+    to communicate with processes on the host which reduces isolation and bypasses
+    container protection models. Remove the 'hostIPC' key to disable this functionality.
+  metadata:
+    cwe:
+    - 'CWE-693: Protection Mechanism Failure'
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#host-namespaces
+    category: security
+    technology:
+    - kubernetes
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: LOW
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/yaml.kubernetes.security.hostipc-pod.hostipc-pod
+    shortlink: https://sg.run/nqGO
+    semgrep.dev:
+      rule:
+        r_id: 10236
+        rv_id: 947055
+        rule_id: nJUYPE
+        version_id: ExTg4KB
+        url: https://semgrep.dev/playground/r/ExTg4KB/yaml.kubernetes.security.hostipc-pod.hostipc-pod
+        origin: community
+  languages:
+  - yaml
+  severity: WARNING
+- id: yaml.kubernetes.security.hostnetwork-pod.hostnetwork-pod
+  patterns:
+  - pattern-inside: "spec:\n  ...\n"
+  - pattern: 'hostNetwork: true
+
+      '
+  message: Pod may use the node network namespace. This gives the pod access to the
+    loopback device, services listening on localhost, and could be used to snoop on
+    network activity of other pods on the same node. Remove the 'hostNetwork' key
+    to disable this functionality.
+  metadata:
+    cwe:
+    - 'CWE-406: Insufficient Control of Network Message Volume (Network Amplification)'
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#host-namespaces
+    category: security
+    technology:
+    - kubernetes
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: LOW
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Other
+    source: https://semgrep.dev/r/yaml.kubernetes.security.hostnetwork-pod.hostnetwork-pod
+    shortlink: https://sg.run/E51A
+    semgrep.dev:
+      rule:
+        r_id: 10237
+        rv_id: 947056
+        rule_id: EwU4NO
+        version_id: 7ZTreWz
+        url: https://semgrep.dev/playground/r/7ZTreWz/yaml.kubernetes.security.hostnetwork-pod.hostnetwork-pod
+        origin: community
+  languages:
+  - yaml
+  severity: WARNING
+- id: yaml.kubernetes.security.hostpid-pod.hostpid-pod
+  patterns:
+  - pattern-inside: "spec:\n  ...\n"
+  - pattern: 'hostPID: true
+
+      '
+  message: Pod is sharing the host process ID namespace. When paired with ptrace this
+    can be used to escalate privileges outside of the container. Remove the 'hostPID'
+    key to disable this functionality.
+  metadata:
+    cwe:
+    - 'CWE-269: Improper Privilege Management'
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#host-namespaces
+    category: security
+    technology:
+    - kubernetes
+    owasp:
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: LOW
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Improper Authorization
+    source: https://semgrep.dev/r/yaml.kubernetes.security.hostpid-pod.hostpid-pod
+    shortlink: https://sg.run/708R
+    semgrep.dev:
+      rule:
+        r_id: 10238
+        rv_id: 1263934
+        rule_id: 7KUeo0
+        version_id: 1QTypvL
+        url: https://semgrep.dev/playground/r/1QTypvL/yaml.kubernetes.security.hostpid-pod.hostpid-pod
+        origin: community
+  languages:
+  - yaml
+  severity: WARNING
+- id: yaml.github-actions.security.allowed-unsecure-commands.allowed-unsecure-commands
+  languages:
+  - yaml
+  severity: WARNING
+  message: The environment variable `ACTIONS_ALLOW_UNSECURE_COMMANDS` grants this
+    workflow permissions to use the `set-env` and `add-path` commands. There is a
+    vulnerability in these commands that could result in environment variables being
+    modified by an attacker. Depending on the use of the environment variable, this
+    could enable an attacker to, at worst, modify the system path to run a different
+    command than intended, resulting in arbitrary code execution. This could result
+    in stolen code or secrets. Don't use `ACTIONS_ALLOW_UNSECURE_COMMANDS`. Instead,
+    use Environment Files. See https://github.com/actions/toolkit/blob/main/docs/commands.md#environment-files
+    for more information.
+  metadata:
+    cwe:
+    - 'CWE-749: Exposed Dangerous Method or Function'
+    owasp: A06:2017 - Security Misconfiguration
+    references:
+    - https://github.blog/changelog/2020-10-01-github-actions-deprecating-set-env-and-add-path-commands/
+    - https://github.com/actions/toolkit/security/advisories/GHSA-mfwh-5m23-j46w
+    - https://github.com/actions/toolkit/blob/main/docs/commands.md#environment-files
+    category: security
+    technology:
+    - github-actions
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Dangerous Method or Function
+    source: https://semgrep.dev/r/yaml.github-actions.security.allowed-unsecure-commands.allowed-unsecure-commands
+    shortlink: https://sg.run/qq78
+    semgrep.dev:
+      rule:
+        r_id: 13412
+        rv_id: 947039
+        rule_id: EwUQ9x
+        version_id: jQTzq34
+        url: https://semgrep.dev/playground/r/jQTzq34/yaml.github-actions.security.allowed-unsecure-commands.allowed-unsecure-commands
+        origin: community
+  patterns:
+  - pattern-either:
+    - patterns:
+      - pattern-inside: '{env: ...}'
+      - pattern: 'ACTIONS_ALLOW_UNSECURE_COMMANDS: true'
+- id: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout
+  languages:
+  - yaml
+  message: This GitHub Actions workflow file uses `pull_request_target` and checks
+    out code from the incoming pull request. When using `pull_request_target`, the
+    Action runs in the context of the target repository, which includes access to
+    all repository secrets. Normally, this is safe because the Action only runs code
+    from the target repository, not the incoming PR. However, by checking out the
+    incoming PR code, you're now using the incoming code for the rest of the action.
+    You may be inadvertently executing arbitrary code from the incoming PR with access
+    to repository secrets, which would let an attacker steal repository secrets. This
+    normally happens by running build scripts (e.g., `npm build` and `make`) or dependency
+    installation scripts (e.g., `python setup.py install`). Audit your workflow file
+    to make sure no code from the incoming PR is executed. Please see https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+    for additional mitigations.
+  metadata:
+    category: security
+    owasp:
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    cwe:
+    - 'CWE-913: Improper Control of Dynamically-Managed Code Resources'
+    references:
+    - https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+    - https://github.com/justinsteven/advisories/blob/master/2021_github_actions_checkspelling_token_leak_via_advice_symlink.md
+    technology:
+    - github-actions
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: LOW
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Code Injection
+    source: https://semgrep.dev/r/yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout
+    shortlink: https://sg.run/jkdn
+    semgrep.dev:
+      rule:
+        r_id: 13365
+        rv_id: 1263929
+        rule_id: d8Ulkd
+        version_id: zyTb2Zd
+        url: https://semgrep.dev/playground/r/zyTb2Zd/yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout
+        origin: community
+  patterns:
+  - pattern-either:
+    - pattern-inside: "on:\n  ...\n  pull_request_target: ...\n  ...\n...\n"
+    - pattern-inside: 'on: [..., pull_request_target, ...]
+
+        ...
+
+        '
+    - pattern-inside: 'on: pull_request_target
+
+        ...
+
+        '
+  - pattern-inside: "jobs:\n  ...\n  $JOBNAME:\n    ...\n    steps:\n      ...\n"
+  - pattern: "...\nuses: \"$ACTION\"\nwith:\n  ...\n  ref: $EXPR\n"
+  - metavariable-regex:
+      metavariable: $ACTION
+      regex: actions/checkout@.*
+  - metavariable-pattern:
+      language: generic
+      metavariable: $EXPR
+      patterns:
+      - pattern: ${{ github.event.pull_request ... }}
+  severity: WARNING
+- id: yaml.github-actions.security.run-shell-injection.run-shell-injection
+  languages:
+  - yaml
+  message: 'Using variable interpolation `${{...}}` with `github` context data in
+    a `run:` step could allow an attacker to inject their own code into the runner.
+    This would allow them to steal secrets and code. `github` context data can have
+    arbitrary user input and should be treated as untrusted. Instead, use an intermediate
+    environment variable with `env:` to store the data and use the environment variable
+    in the `run:` script. Be sure to use double-quotes the environment variable, like
+    this: "$ENVVAR".'
+  metadata:
+    category: security
+    cwe:
+    - 'CWE-78: Improper Neutralization of Special Elements used in an OS Command (''OS
+      Command Injection'')'
+    owasp:
+    - A01:2017 - Injection
+    - A03:2021 - Injection
+    - A05:2025 - Injection
+    references:
+    - https://docs.github.com/en/actions/learn-github-actions/security-hardening-for-github-actions#understanding-the-risk-of-script-injections
+    - https://securitylab.github.com/research/github-actions-untrusted-input/
+    technology:
+    - github-actions
+    cwe2022-top25: true
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: HIGH
+    confidence: HIGH
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Command Injection
+    source: https://semgrep.dev/r/yaml.github-actions.security.run-shell-injection.run-shell-injection
+    shortlink: https://sg.run/pkzk
+    semgrep.dev:
+      rule:
+        r_id: 13162
+        rv_id: 1263930
+        rule_id: v8UjQj
+        version_id: pZT03YZ
+        url: https://semgrep.dev/playground/r/pZT03YZ/yaml.github-actions.security.run-shell-injection.run-shell-injection
+        origin: community
+  patterns:
+  - pattern-inside: 'steps: [...]'
+  - pattern-inside: "- run: ...\n  ...\n"
+  - pattern: 'run: $SHELL'
+  - metavariable-pattern:
+      language: generic
+      metavariable: $SHELL
+      patterns:
+      - pattern-either:
+        - pattern: ${{ ... github.event.issue.title ... }}
+        - pattern: ${{ ... github.event.issue.body ... }}
+        - pattern: ${{ ... github.event.pull_request.title ... }}
+        - pattern: ${{ ... github.event.pull_request.body ... }}
+        - pattern: ${{ ... github.event.comment.body ... }}
+        - pattern: ${{ ... github.event.review.body ... }}
+        - pattern: ${{ ... github.event.review_comment.body ... }}
+        - pattern: ${{ ... github.event.pages ... .page_name ... }}
+        - pattern: ${{ ... github.event.head_commit.message ... }}
+        - pattern: ${{ ... github.event.head_commit.author.email ... }}
+        - pattern: ${{ ... github.event.head_commit.author.name ... }}
+        - pattern: ${{ ... github.event.commits ... .author.email ... }}
+        - pattern: ${{ ... github.event.commits ... .author.name ... }}
+        - pattern: ${{ ... github.event.pull_request.head.ref ... }}
+        - pattern: ${{ ... github.event.pull_request.head.label ... }}
+        - pattern: ${{ ... github.event.pull_request.head.repo.default_branch ...
+            }}
+        - pattern: ${{ ... github.head_ref ... }}
+        - pattern: ${{ ... github.event.inputs ... }}
+        - pattern: ${{ ... github.event.discussion.title ... }}
+        - pattern: ${{ ... github.event.discussion.body ... }}
+        - pattern: ${{ ... inputs ... }}
+      - pattern-not: ${{ ... github.event.issue.title && ... }}
+      - pattern-not: ${{ ... github.event.issue.body && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.title && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.body && ... }}
+      - pattern-not: ${{ ... github.event.comment.body && ... }}
+      - pattern-not: ${{ ... github.event.review.body && ... }}
+      - pattern-not: ${{ ... github.event.review_comment.body && ... }}
+      - pattern-not: ${{ ... github.event.head_commit.message && ... }}
+      - pattern-not: ${{ ... github.event.head_commit.author.email && ... }}
+      - pattern-not: ${{ ... github.event.head_commit.author.name && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.head.ref && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.head.label && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.head.repo.default_branch &&
+          ... }}
+      - pattern-not: ${{ ... github.head_ref && ... }}
+      - pattern-not: ${{ ... github.event.discussion.title && ... }}
+      - pattern-not: ${{ ... github.event.discussion.body && ... }}
+  severity: ERROR

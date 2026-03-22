@@ -22,7 +22,6 @@ dist/
 build/
 out/
 
-# Replit
 .replit
 .local/
 
@@ -65,3 +64,38 @@ scripts/
 __pycache__/
 .env
 venv/
+
+# Semgrep raw pack files — regenerate with download_rules.py
+backend/scanning_repos/semgrep_rules/owasp.yaml
+backend/scanning_repos/semgrep_rules/cwe.yaml
+backend/scanning_repos/semgrep_rules/secrets.yaml
+backend/scanning_repos/semgrep_rules/python.yaml
+backend/scanning_repos/semgrep_rules/django.yaml
+backend/scanning_repos/semgrep_rules/flask.yaml
+backend/scanning_repos/semgrep_rules/javascript.yaml
+backend/scanning_repos/semgrep_rules/typescript.yaml
+backend/scanning_repos/semgrep_rules/react.yaml
+backend/scanning_repos/semgrep_rules/nodejs.yaml
+backend/scanning_repos/semgrep_rules/java.yaml
+backend/scanning_repos/semgrep_rules/golang.yaml
+backend/scanning_repos/semgrep_rules/ruby.yaml
+backend/scanning_repos/semgrep_rules/php.yaml
+backend/scanning_repos/semgrep_rules/rust.yaml
+backend/scanning_repos/semgrep_rules/sql-injection.yaml
+backend/scanning_repos/semgrep_rules/xss.yaml
+backend/scanning_repos/semgrep_rules/jwt.yaml
+backend/scanning_repos/semgrep_rules/docker.yaml
+backend/scanning_repos/semgrep_rules/terraform.yaml
+backend/scanning_repos/semgrep_rules/kubernetes.yaml
+backend/scanning_repos/semgrep_rules/github-actions.yaml
+
+# Logs
+*.log
+scanning.log
+app.log
+
+# Test artifacts
+test-*.yaml
+test-*.json
+findings*.json
+dummy.py
