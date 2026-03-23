@@ -211,10 +211,10 @@ function AIFixButton({ onClick }: { onClick: () => void }) {
 
 // ─── LOADING STAGES (replaces bare spinner) ───────────────────────────────────
 const AI_STAGES = [
-  { id: 0, label: "Fetching vulnerable file from GitHub", icon: "📥" },
-  { id: 1, label: "Resolving imported dependencies", icon: "🔗" },
-  { id: 2, label: "Analysing security context", icon: "🔍" },
-  { id: 3, label: "Generating secure patch", icon: "🛡️" },
+  { id: 0, label: "Fetching vulnerable file from GitHub" },
+  { id: 1, label: "Resolving imported dependencies" },
+  { id: 2, label: "Analysing security context" },
+  { id: 3, label: "Generating secure patch" },
 ];
 
 function AILoadingPanel({ filePath }: { filePath: string }) {
@@ -230,33 +230,32 @@ function AILoadingPanel({ filePath }: { filePath: string }) {
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8 py-12 select-none">
-      {/* Animated icon cluster */}
+      {/* Shield icon cluster */}
       <div className="relative w-20 h-20 mb-8">
-        <div className="absolute inset-0 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-          <span className="text-3xl">🛡️</span>
+        <div className="absolute inset-0 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+          <Icons.Shield />
         </div>
         <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center">
           <div className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
         </div>
       </div>
 
-      <p className="text-zinc-300 font-semibold text-base mb-1">Analysing vulnerability</p>
+      <p className="text-zinc-200 font-semibold text-base mb-1">Analysing vulnerability</p>
       <p className="text-zinc-500 text-sm font-mono mb-10 truncate max-w-xs">{filePath}</p>
 
       {/* Stage list */}
-      <div className="w-full max-w-sm space-y-3">
+      <div className="w-full max-w-sm space-y-2.5">
         {AI_STAGES.map((s) => {
           const isDone    = stage > s.id;
           const isActive  = stage === s.id;
-          const isPending = stage < s.id;
           return (
             <div key={s.id} className={`flex items-center gap-3 px-4 py-3 rounded-lg border transition-all duration-500 ${
               isDone   ? "bg-emerald-500/8 border-emerald-500/20 opacity-70"
               : isActive ? "bg-indigo-500/10 border-indigo-500/25"
               : "bg-zinc-900/30 border-zinc-800/50 opacity-40"
             }`}>
-              <span className="text-base w-5 text-center">
-                {isDone ? "✓" : isActive ? s.icon : "○"}
+              <span className={`flex-shrink-0 w-4 h-4 ${isDone ? "text-emerald-400" : isActive ? "text-indigo-400" : "text-zinc-700"}`}>
+                {isDone ? <Icons.Check /> : isActive ? <Icons.Wand /> : <Icons.Code />}
               </span>
               <span className={`text-sm font-medium ${
                 isDone ? "text-emerald-400" : isActive ? "text-zinc-200" : "text-zinc-600"
@@ -339,14 +338,27 @@ function AIFixModal({
         });
 
         if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData.detail || `Server returned ${response.status}`);
+          let errMsg = `Request failed (${response.status} ${response.statusText})`;
+          try {
+            const errData = await response.json();
+            console.error("[AIFixModal] Server error response:", errData);
+            if (typeof errData.detail === "string") errMsg = errData.detail;
+            else if (Array.isArray(errData.detail)) errMsg = errData.detail.map((d: any) => d.msg || JSON.stringify(d)).join("; ");
+            else if (errData.detail) errMsg = JSON.stringify(errData.detail);
+            else if (errData.message) errMsg = errData.message;
+          } catch {}
+          throw new Error(errMsg);
         }
 
         const data = await response.json();
+        if (!data || typeof data !== "object") throw new Error("Unexpected response format from server");
         setResult(data);
-      } catch (err: any) {
-        setError(err.message || "Failed to generate AI fix");
+      } catch (err: unknown) {
+        if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError(typeof err === "string" ? err : "An unexpected error occurred");
+        }
       } finally {
         setIsLoading(false);
       }
@@ -429,46 +441,80 @@ function AIFixModal({
                   <CodeBlock code={result.fixed_code} label="Secure Patch" variant="safe" />
                 </div>
               ) : (
-                /* ── Analysis panel ── */
-                <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
-                  {/* Vulnerability analysis */}
-                  <section>
-                    <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Vulnerability Analysis</h3>
-                    <div className="bg-red-500/5 border border-red-500/15 rounded-xl p-4 text-sm text-zinc-300 leading-relaxed">
-                      {result.vulnerability_analysis}
-                    </div>
-                  </section>
+                /* ── Analysis panel — professional layout ── */
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  <div className="max-w-3xl mx-auto p-6 space-y-5">
 
-                  {/* Code context */}
-                  {result.code_analysis && (
-                    <section>
-                      <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Code Context</h3>
-                      <div className="bg-zinc-900/40 border border-zinc-800/50 rounded-xl p-4 text-sm text-zinc-300 leading-relaxed">
-                        {result.code_analysis}
+                    {/* Vulnerability Analysis */}
+                    <section className="rounded-xl border border-zinc-800 overflow-hidden">
+                      <div className="flex items-center gap-2.5 px-4 py-3 bg-zinc-900/60 border-b border-zinc-800">
+                        <div className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+                        <h3 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Vulnerability Analysis</h3>
+                      </div>
+                      <div className="p-4 bg-red-500/[0.03]">
+                        <p className="text-sm text-zinc-300 leading-relaxed">{result.vulnerability_analysis}</p>
                       </div>
                     </section>
-                  )}
 
-                  {/* Changes made */}
-                  <section>
-                    <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Changes Applied</h3>
-                    <div className="space-y-2">
-                      {result.changes_made.map((change, i) => (
-                        <div key={i} className="flex items-start gap-3 px-4 py-3 bg-emerald-500/5 border border-emerald-500/15 rounded-xl">
-                          <div className="mt-0.5 text-emerald-500 flex-shrink-0"><Icons.Check /></div>
-                          <p className="text-sm text-zinc-300 leading-relaxed">{change}</p>
+                    {/* Code Context */}
+                    {result.code_analysis && (
+                      <section className="rounded-xl border border-zinc-800 overflow-hidden">
+                        <div className="flex items-center gap-2.5 px-4 py-3 bg-zinc-900/60 border-b border-zinc-800">
+                          <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 flex-shrink-0" />
+                          <h3 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Code Context</h3>
                         </div>
-                      ))}
-                    </div>
-                  </section>
+                        <div className="p-4">
+                          <p className="text-sm text-zinc-300 leading-relaxed">{result.code_analysis}</p>
+                        </div>
+                      </section>
+                    )}
 
-                  {/* Security improvement */}
-                  <section>
-                    <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Security Impact</h3>
-                    <div className="bg-indigo-500/5 border border-indigo-500/15 rounded-xl p-4 text-sm text-zinc-300 leading-relaxed">
-                      {result.security_improvement}
-                    </div>
-                  </section>
+                    {/* Changes Applied */}
+                    <section className="rounded-xl border border-zinc-800 overflow-hidden">
+                      <div className="flex items-center gap-2.5 px-4 py-3 bg-zinc-900/60 border-b border-zinc-800">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                        <h3 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Changes Applied</h3>
+                        <span className="ml-auto text-[10px] font-semibold text-zinc-600 bg-zinc-800 px-2 py-0.5 rounded-full">
+                          {result.changes_made.length}
+                        </span>
+                      </div>
+                      <div className="divide-y divide-zinc-800/60">
+                        {result.changes_made.map((change, i) => (
+                          <div key={i} className="flex items-start gap-3 px-4 py-3">
+                            <div className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                              <span className="text-[10px] font-bold text-emerald-500">{i + 1}</span>
+                            </div>
+                            <p className="text-sm text-zinc-300 leading-relaxed">{change}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    {/* Security Impact */}
+                    <section className="rounded-xl border border-indigo-500/20 overflow-hidden">
+                      <div className="flex items-center gap-2.5 px-4 py-3 bg-indigo-500/5 border-b border-indigo-500/15">
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+                        <h3 className="text-[11px] font-bold text-indigo-400/70 uppercase tracking-widest">Security Impact</h3>
+                      </div>
+                      <div className="p-4 bg-indigo-500/[0.03]">
+                        <p className="text-sm text-zinc-300 leading-relaxed">{result.security_improvement}</p>
+                      </div>
+                    </section>
+
+                    {/* Fix explanation if present */}
+                    {result.fix_explanation && (
+                      <section className="rounded-xl border border-zinc-800 overflow-hidden">
+                        <div className="flex items-center gap-2.5 px-4 py-3 bg-zinc-900/60 border-b border-zinc-800">
+                          <div className="w-1.5 h-1.5 rounded-full bg-sky-500 flex-shrink-0" />
+                          <h3 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Remediation Notes</h3>
+                        </div>
+                        <div className="p-4">
+                          <p className="text-sm text-zinc-300 leading-relaxed">{result.fix_explanation}</p>
+                        </div>
+                      </section>
+                    )}
+
+                  </div>
                 </div>
               )}
 
@@ -487,6 +533,8 @@ function AIFixModal({
   );
 }
 
+
+
 type CodeViewerProps = {
   vulnerability: Vulnerability;
   repoOwner: string;
@@ -499,10 +547,6 @@ function CodeViewerModal({ vulnerability, repoOwner, repoName, onClose, onFixWit
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"file" | "fix">("file");
-  const [fixResult, setFixResult] = useState<AIFixResult | null>(null);
-  const [fixLoading, setFixLoading] = useState(false);
-  const [fixError, setFixError] = useState<string | null>(null);
   const lineRefs = React.useRef<Record<number, HTMLTableRowElement | null>>({});
 
   const startLine = vulnerability.location.start_line;
@@ -542,35 +586,6 @@ function CodeViewerModal({ vulnerability, repoOwner, repoName, onClose, onFixWit
       }, 100);
     }
   }, [fileContent, startLine]);
-
-  // Fetch AI fix when Fix tab is opened
-  const handleFixTab = async () => {
-    setActiveTab("fix");
-    if (fixResult || fixLoading) return;
-    setFixLoading(true);
-    setFixError(null);
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/ai/fix-vulnerability`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          vulnerability,
-          repo_owner: repoOwner,
-          repo_name: repoName,
-        }),
-      });
-      if (!response.ok) {
-        const e = await response.json().catch(() => ({ detail: response.statusText }));
-        throw new Error(e.detail || "AI fix failed");
-      }
-      setFixResult(await response.json());
-    } catch (err: any) {
-      setFixError(err.message || "Failed to generate fix");
-    } finally {
-      setFixLoading(false);
-    }
-  };
 
   const sev = SEVERITY_CONFIG[vulnerability.severity as keyof typeof SEVERITY_CONFIG] || SEVERITY_CONFIG.INFO;
   const lines = fileContent ? fileContent.split("\n") : [];
@@ -613,7 +628,7 @@ function CodeViewerModal({ vulnerability, repoOwner, repoName, onClose, onFixWit
         <span className="text-sm font-semibold text-zinc-200 flex-1 truncate">{vulnerability.vulnerability_type}</span>
         <span className="text-xs text-zinc-500 font-mono hidden sm:block">{vulnerability.rule_id}</span>
         <button
-          onClick={handleFixTab}
+          onClick={onFixWithAI}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 hover:text-indigo-200 transition-all"
         >
           <Icons.Wand />
@@ -621,34 +636,11 @@ function CodeViewerModal({ vulnerability, repoOwner, repoName, onClose, onFixWit
         </button>
       </div>
 
-      {/* ── Tab bar ── */}
-      <div className="flex-shrink-0 flex border-b border-zinc-800/60 bg-zinc-950 px-4 gap-0">
-        <button
-          onClick={() => setActiveTab("file")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-all ${
-            activeTab === "file" ? "text-indigo-400 border-indigo-500" : "text-zinc-500 border-transparent hover:text-zinc-300"
-          }`}
-        >
-          <Icons.Eye />
-          Source File
-        </button>
-        <button
-          onClick={handleFixTab}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-all ${
-            activeTab === "fix" ? "text-indigo-400 border-indigo-500" : "text-zinc-500 border-transparent hover:text-zinc-300"
-          }`}
-        >
-          <Icons.Wand />
-          AI Fix
-          {fixResult && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ml-0.5" />}
-        </button>
-      </div>
+      
 
       {/* ── Body ── */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        {/* SOURCE FILE TAB */}
-        {activeTab === "file" && (
-          <div className="h-full overflow-auto">
+        <div className="h-full overflow-auto">
             {loading ? (
               <div className="flex flex-col items-center justify-center h-full gap-4">
                 <div className="flex gap-1">
@@ -722,46 +714,7 @@ function CodeViewerModal({ vulnerability, repoOwner, repoName, onClose, onFixWit
               </table>
             )}
           </div>
-        )}
 
-        {/* AI FIX TAB */}
-        {activeTab === "fix" && (
-          <div className="h-full overflow-hidden flex flex-col">
-            {fixLoading ? (
-              <AILoadingPanel filePath={vulnerability.location.file} />
-            ) : fixError ? (
-              <div className="flex flex-col items-center justify-center flex-1 gap-3 p-8 text-center">
-                <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
-                  <Icons.Warning />
-                </div>
-                <p className="text-zinc-300 font-semibold text-sm">Fix generation failed</p>
-                <p className="text-red-400 text-xs font-mono">{fixError}</p>
-              </div>
-            ) : fixResult ? (
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                {/* Side-by-side diff */}
-                <div className="flex-1 min-h-0 grid grid-cols-2 divide-x divide-zinc-800/60 overflow-hidden">
-                  <CodeBlock code={fixResult.original_code} label="Vulnerable" variant="danger" />
-                  <CodeBlock code={fixResult.fixed_code} label="Secure Patch" variant="safe" />
-                </div>
-                {/* Analysis strip */}
-                <div className="flex-shrink-0 border-t border-zinc-800/60 p-4 bg-zinc-950/80 space-y-2 overflow-y-auto max-h-44">
-                  {fixResult.changes_made.map((change, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs">
-                      <span className="text-emerald-400 mt-0.5 flex-shrink-0"><Icons.Check /></span>
-                      <span className="text-zinc-300 leading-relaxed">{change}</span>
-                    </div>
-                  ))}
-                </div>
-                {/* Footer */}
-                <div className="flex-shrink-0 border-t border-zinc-800/60 px-4 py-2.5 flex items-center justify-between bg-[#0e0e10]">
-                  <p className="text-xs text-zinc-600 font-mono">{vulnerability.location.file}</p>
-                  <CopyButton text={fixResult.fixed_code} label="Copy Patch" />
-                </div>
-              </div>
-            ) : null}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1107,10 +1060,17 @@ function RepoCard({ repo, onScanStart, scanning }: { repo: Repo; onScanStart: ()
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function RepositoriesPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [repos, setRepos] = useState<Repo[]>([]);
+  const [repos, setRepos] = useState<Repo[]>(() => {
+    try {
+      const cached = sessionStorage.getItem("revamp_repos");
+      return cached ? JSON.parse(cached) : [];
+    } catch { return []; }
+  });
   const [loading, setLoading] = useState(true);
   const [reposLoading, setReposLoading] = useState(false);
-  const [reposLoaded, setReposLoaded] = useState(false);
+  const [reposLoaded, setReposLoaded] = useState(() => {
+    try { return !!sessionStorage.getItem("revamp_repos"); } catch { return false; }
+  });
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -1155,7 +1115,9 @@ export default function RepositoriesPage() {
       const rRes = await fetch(`${API_BASE_URL}/api/github/repos?sort=updated&per_page=50`, { credentials: "include" });
       if (!rRes.ok) throw new Error("Failed to load repositories");
       const rData = await rRes.json();
-      setRepos(Array.isArray(rData) ? rData : (rData.repositories || []));
+      const repoList = Array.isArray(rData) ? rData : (rData.repositories || []);
+      setRepos(repoList);
+      try { sessionStorage.setItem("revamp_repos", JSON.stringify(repoList)); } catch {}
       setReposLoaded(true);
     } catch {
       addToast("Failed to load repositories", "error");
