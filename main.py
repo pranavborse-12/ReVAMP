@@ -3,9 +3,7 @@ Unified Main Entry Point for REVAMP/SecureScan Application
 Combines authentication database, GitHub integration, and repository scanning
 """
 # CRITICAL: Force UTF-8 encoding for Windows console BEFORE any other imports
-import os
-os.environ["PYTHONUTF8"] = "1"
-os.environ["PYTHONIOENCODING"] = "utf-8"
+ 
 import sys
 import io
 if sys.platform == 'win32':
