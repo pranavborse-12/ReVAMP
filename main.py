@@ -9,6 +9,10 @@ if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 import uvicorn
 import socket
 import asyncio
@@ -23,10 +27,7 @@ from datetime import datetime
 import os
 import logging
 from sqlalchemy import text
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
 
 # Setup logging with both file and console handlers
 logging.basicConfig(

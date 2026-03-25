@@ -3,6 +3,7 @@ import { Github } from 'lucide-react';
 import { AuthService } from '../lib/auth';
 import { useState, useEffect } from 'react';
 import { cn } from '../lib/utils';
+import  Logo  from './Logo';
 
 export function Header() {
   const [scrolled, setScrolled] = useState(false);
@@ -35,51 +36,10 @@ export function Header() {
 
         {/* LOGO */}
         <div
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="group flex items-center gap-3 cursor-pointer select-none"
+         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+         className="group cursor-pointer"
         >
-          {/* Gemini-style Logo (NO GLOW) */}
-          <div className="w-8 h-8">
-            <svg
-              viewBox="0 0 100 100"
-              className="w-full h-full fill-none transition-colors duration-300"
-            >
-              {/* Hexagon */}
-              <path
-                d="M50 5 L90 25 L90 65 L50 95 L10 65 L10 25 Z"
-                stroke="currentColor"
-                strokeWidth="4"
-                className="text-cyan-400 group-hover:text-cyan-300 transition-colors duration-300"
-              />
-
-              {/* Inner structure */}
-              <path
-                d="M50 25 L50 45 
-                   M30 35 L50 45 L70 35 
-                   M50 45 L50 75"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-white/80 group-hover:text-white transition-colors duration-300"
-              />
-
-              {/* Center node */}
-              <circle
-                cx="50"
-                cy="50"
-                r="8"
-                stroke="currentColor"
-                strokeWidth="2"
-                className="text-violet-400 group-hover:text-violet-300 transition-colors duration-300"
-              />
-            </svg>
-          </div>
-
-          {/* Brand Text */}
-          <span className="text-xl font-bold tracking-wider text-white transition-colors duration-300 group-hover:text-cyan-100">
-            Re<span className="text-cyan-400 group-hover:text-cyan-300">VAMP</span>
-          </span>
+         <Logo />
         </div>
 
         {/* CENTER PILL NAV */}

@@ -189,6 +189,28 @@ async def perform_scan(
         scanner = VulnerabilityScanner(temp_dir, languages)
         vulnerabilities, error_msg = scanner.scan(use_cache=False)
 
+        # ✅ FIX: Normalize vulnerability structure
+        # Scanners return data with a nested 'location' dict.
+        # The frontend expects flat top-level fields: file_path, start_line, etc.
+        # Without this, file_path is empty and search by filename doesn't work.
+        normalized = []
+        for v in vulnerabilities:
+            loc = v.get('location', {})
+            normalized.append({
+                **v,
+                'file_path':    v.get('file_path') or loc.get('file', ''),
+                'start_line':   v.get('start_line') or loc.get('start_line', 0),
+                'end_line':     v.get('end_line') or loc.get('end_line', 0),
+                'start_column': v.get('start_column') or loc.get('start_column', 0),
+                'code_snippet': (
+                    v.get('code_snippet') or
+                    loc.get('code_snippet') or
+                    v.get('snippet', '')
+                ),
+            })
+        vulnerabilities = normalized
+        logger.info(f"[{scan_id}] ✅ Normalized {len(vulnerabilities)} vulnerabilities (file_path mapped)")
+
         severity = calculate_severity_summary(vulnerabilities)
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()

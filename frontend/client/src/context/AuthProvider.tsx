@@ -174,11 +174,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   // On mount: restore tokens and load user
   useEffect(() => {
     (async () => {
-      // CRITICAL: Check if we just logged out
+      // ✅ FIX 1: Check if we just logged out
       const justLoggedOut = sessionStorage.getItem('just_logged_out');
       if (justLoggedOut === 'true') {
         console.log("🚫 Just logged out - skipping all auth checks");
         sessionStorage.removeItem('just_logged_out');
+        // Ensure tokens don't survive the page reload and trigger auto-login
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('auth_user');
         setLoading(false);
         return;
       }
@@ -341,75 +345,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  // Logout: use AuthService to call backend then clear
+  // ✅ FIX 3: Logout — clean order of operations, no race conditions
   const logout = async () => {
     console.log("🚪 Logout initiated");
-    
-    // Set flag immediately to prevent any auto-redirects during logout
     isLoggingOut.current = true;
-    
-    // Stop refresh loop immediately
     stopRefreshLoop();
-    
-    // Clear user state immediately
     setUser(null);
-    
-    // Call backend logout FIRST (to clear server-side cookies)
+
+    // Call backend FIRST so it can read the token before we wipe it
     try {
       const accessToken = localStorage.getItem('access_token') || getAccessToken();
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
-      }
-      
+      if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
       await fetch(`${AUTH_CONFIG.API_URL}/auth/logout`, {
         method: 'POST',
         headers,
         credentials: 'include',
       });
-      
       console.log("✅ Backend logout successful");
     } catch (err) {
       console.warn("⚠️ Backend logout failed:", err);
     }
-    
-    // Clear all storage after backend call
+
+    // Clear ALL storage — tokens must not survive the page reload
     localStorage.clear();
     sessionStorage.clear();
-    
-    // Clear all cookies aggressively
+
+    // Set the flag AFTER clearing storage so it persists through reload
+    sessionStorage.setItem('just_logged_out', 'true');
+
+    // Clear any JS-accessible cookies (httponly ones are handled by backend above)
     const cookies = document.cookie.split(';');
-    const domains = [
-      '',
-      window.location.hostname,
-      `.${window.location.hostname}`,
-      'localhost',
-      '.localhost'
-    ];
-    
     for (const cookie of cookies) {
       const [name] = cookie.trim().split('=');
-      // Try clearing with different domain combinations
-      for (const domain of domains) {
-        if (domain) {
-          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${domain}`;
-        }
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-      }
+      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
     }
-    
-    // Mark that we just logged out - store in sessionStorage so it persists during page reload
-    sessionStorage.setItem('just_logged_out', 'true');
-    
-    // Wait for backend and cleanup to complete
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Reset the flag BEFORE redirect
-    isLoggingOut.current = false;
-    hasRedirected.current = false;
-    
+
     console.log("🔄 Redirecting to home page");
-    // Use replace instead of href to prevent back button issues
     window.location.replace('/');
   };
 
