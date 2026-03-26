@@ -47,7 +47,7 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
-      staleTime: Infinity,
+      staleTime: 0,        // ✅ FIX: was Infinity — cached session data was masking logged-out state
       retry: false,
     },
     mutations: {

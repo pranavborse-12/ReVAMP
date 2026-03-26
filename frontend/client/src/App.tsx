@@ -12,8 +12,10 @@ import { queryClient } from "./lib/queryClient";
 import Dashboard from "./pages/dashboard";
 import Home from "./pages/Home";
 import NotFound from "./pages/not-found";
-
-// Correct import path for RepositoriesPage
+import Vulnerabilities from "./pages/vulnerabilities";
+import ScanHistory from "./pages/scan-history";
+import Documentation from "./pages/documentation";
+import SettingsPage from "./pages/settings";
 import RepositoriesPage from "./app/repositories/page";
 
 function Router() {
@@ -23,7 +25,7 @@ function Router() {
         {/* Public Routes */}
         <Route path="/" element={<Home />} />
         <Route path="/verify" element={<VerifyPage />} />
-        
+
         {/* Protected Routes - wrapped in Layout */}
         <Route
           element={
@@ -34,14 +36,12 @@ function Router() {
         >
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/repositories" element={<RepositoriesPage />} />
-          <Route path="/vulnerabilities" element={<div>Vulnerabilities</div>} />
-          <Route path="/reports" element={<div>Reports</div>} />
-          <Route path="/scanner" element={<div>Scanner</div>} />
-          <Route path="/history" element={<div>History</div>} />
-          <Route path="/docs" element={<div>Documentation</div>} />
-          <Route path="/settings" element={<div>Settings</div>} />
+          <Route path="/vulnerabilities" element={<Vulnerabilities />} />
+          <Route path="/history" element={<ScanHistory />} />
+          <Route path="/docs" element={<Documentation />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Route>
-        
+
         {/* 404 Page */}
         <Route path="*" element={<NotFound />} />
       </Routes>

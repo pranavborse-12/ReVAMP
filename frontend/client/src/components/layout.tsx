@@ -7,20 +7,17 @@ function LayoutContent() {
   const { open } = useSidebar();
 
   return (
-    <div className="min-h-screen bg-black flex">
+    <div className="min-h-screen bg-[#0d1117] flex">
       <AppSidebar />
 
-      {/* Main content - full width, respects sidebar margin */}
       <main
         className={cn(
-          "flex-1 min-h-screen transition-all duration-300 ease-in-out overflow-auto w-full",
+          "flex-1 min-h-screen transition-all duration-300 ease-in-out overflow-auto",
           open ? "ml-64" : "ml-16"
         )}
-        style={{ width: open ? 'calc(100vw - 256px)' : 'calc(100vw - 64px)' }}
+        style={{ width: open ? "calc(100vw - 256px)" : "calc(100vw - 64px)" }}
       >
-        <div className="p-8 w-full">
-          <Outlet />
-        </div>
+        <Outlet />
       </main>
     </div>
   );

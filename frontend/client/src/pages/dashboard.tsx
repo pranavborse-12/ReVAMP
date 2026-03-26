@@ -132,7 +132,7 @@ export default function Dashboard() {
     const severity = [
       { name: "Critical", value: statsData.stats.criticalVulns, color: "#ef4444" },
       { name: "High", value: statsData.stats.highVulns, color: "#f97316" },
-      { name: "Medium", value: statsData.stats.mediumVulns, color: "#eab308" },
+      { name: "Medium", value: statsData.stats.mediumVulns, color: "#eab308" }, 
       { name: "Low", value: statsData.stats.lowVulns, color: "#3b82f6" }
     ];
 

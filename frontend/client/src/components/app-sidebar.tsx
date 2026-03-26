@@ -2,11 +2,9 @@ import {
   BarChart3,
   BookOpen,
   Clock,
-  FileText,
   GitBranch,
   LogOut,
   PanelLeft,
-  Search,
   Settings,
   Shield,
   User,
@@ -14,19 +12,16 @@ import {
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../context/AuthProvider";
 import { cn } from "../lib/utils";
-import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { useSidebar } from "./ui/sidebar";
 
 const dashboardItems = [
-  { title: "Overview", url: "/dashboard", icon: BarChart3, badge: null },
+  { title: "Overview", url: "/dashboard", icon: BarChart3 },
   { title: "Repositories", url: "/repositories", icon: GitBranch },
-  { title: "Vulnerabilities", url: "/vulnerabilities", icon: Shield},
-  { title: "Security Reports", url: "/reports", icon: FileText, badge: null },
+  { title: "Vulnerabilities", url: "/vulnerabilities", icon: Shield },
 ];
 
 const toolsItems = [
-  { title: "Code Scanner", url: "/scanner", icon: Search },
   { title: "Scan History", url: "/history", icon: Clock },
   { title: "Documentation", url: "/docs", icon: BookOpen },
   { title: "Settings", url: "/settings", icon: Settings },

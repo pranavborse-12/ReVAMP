@@ -540,21 +540,219 @@ async def start_scan(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# STATUS / RESULT / SUMMARY — unchanged logic, kept intact
-# ─────────────────────────────────────────────────────────────────────────────
+# ✅ FIX: This MUST be defined BEFORE /scans/{scan_id} to prevent FastAPI
+# from matching the literal string "history" as a scan_id parameter.
+@router.get("/scans/history")
+async def get_scan_history(
+    request: Request,
+    limit: Optional[int] = 50
+):
+    """
+    Get user's scan history.
+    ✅ FIXED: Reads from PostgreSQL — survives uvicorn restarts.
+    Falls back to in-memory store only if DB is unavailable.
+    """
+    try:
+        user_id = await get_user_id(request)
+
+        # ── DB path (primary) ─────────────────────────────────────
+        from backend.database import config as db_config
+        from backend.database.scan_models import ScanHistory, Repository
+        from sqlalchemy import select, desc
+
+        if db_config.is_db_available() and db_config.AsyncSessionLocal:
+            async with db_config.AsyncSessionLocal() as db:
+                rows = await db.execute(
+                    select(ScanHistory, Repository.owner, Repository.name)
+                    .join(Repository, ScanHistory.repository_id == Repository.id, isouter=True)
+                    .where(ScanHistory.user_id == user_id)
+                    .order_by(desc(ScanHistory.queued_at))
+                    .limit(limit)
+                )
+
+                scans = []
+                for scan, repo_owner, repo_name in rows:
+                    # Use getattr with fallbacks so missing model fields never crash
+                    critical = getattr(scan, 'critical_count', None) or 0
+                    high     = getattr(scan, 'high_count', None) or 0
+                    medium   = getattr(scan, 'medium_count', None) or 0
+                    low      = getattr(scan, 'low_count', None) or 0
+
+                    severity_summary = None
+                    if any([critical, high, medium, low]):
+                        severity_summary = {
+                            "critical": critical,
+                            "high":     high,
+                            "medium":   medium,
+                            "low":      low,
+                            "info":     0,
+                            "warning":  0,
+                        }
+
+                    # scan_duration may be stored under different column names
+                    duration = (
+                        getattr(scan, 'scan_duration', None)
+                        or getattr(scan, 'duration_seconds', None)
+                        or getattr(scan, 'duration', None)
+                    )
+
+                    completed_at = getattr(scan, 'completed_at', None)
+                    started_at   = getattr(scan, 'started_at', None)
+                    queued_at    = getattr(scan, 'queued_at', None)
+
+                    scans.append({
+                        "scan_id":          str(scan.scan_id),
+                        "repo_owner":       repo_owner or "unknown",
+                        "repo_name":        repo_name or "unknown",
+                        "status":           scan.status,
+                        "total_issues":     getattr(scan, 'total_vulnerabilities', None) or 0,
+                        "severity_summary": severity_summary,
+                        "scan_duration":    duration,
+                        "completed_at":     completed_at.isoformat() if completed_at else None,
+                        "started_at":       (started_at or queued_at or completed_at),
+                        "started_at":       (started_at.isoformat() if started_at else
+                                             queued_at.isoformat() if queued_at else None),
+                        "error_message":    getattr(scan, 'error_message', None),
+                    })
+
+                logger.info(f"Scan history fetched from DB for user {user_id}: {len(scans)} records")
+                return {"total_scans": len(scans), "scans": scans}
+
+        # ── Memory fallback (DB unavailable) ─────────────────────
+        logger.warning("DB unavailable — falling back to in-memory scan history")
+        all_scans = get_all_scan_results()
+        scans = sorted(
+            all_scans.values(),
+            key=lambda x: x.get('started_at') or x.get('scan_id', ''),
+            reverse=True
+        )[:limit]
+
+        return {
+            "total_scans": len(all_scans),
+            "scans": [
+                {
+                    "scan_id":          s.get('scan_id'),
+                    "repo_owner":       s.get('repo_owner'),
+                    "repo_name":        s.get('repo_name'),
+                    "status":           s.get('status'),
+                    "total_issues":     s.get('total_issues', 0),
+                    "severity_summary": s.get('severity_summary'),
+                    "scan_duration":    s.get('scan_duration'),
+                    "completed_at":     s.get('completed_at'),
+                    "started_at":       s.get('started_at'),
+                    "error_message":    s.get('error_message'),
+                }
+                for s in scans
+            ]
+        }
+
+    except Exception as e:
+        logger.error(f"Error retrieving scan history: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving scan history: {str(e)}"
+        )
+
 
 @router.get("/scans/{scan_id}")
-async def get_scan_result_endpoint(scan_id: str):
+async def get_scan_result_endpoint(scan_id: str, request: Request):
+    """
+    Get detailed scan results by scan ID.
+    ✅ FIXED: Reads from PostgreSQL first, falls back to in-memory.
+    """
     try:
+        logger.info(f"[{scan_id}] Retrieving scan result")
+
+        # ── 1. Try in-memory first (covers live/in-progress scans) ──
         result = get_scan_result(scan_id)
-        if result is None:
-            raise HTTPException(status_code=404, detail=f"Scan not found. ID: {scan_id}")
-        return JSONResponse(content=result)
+        if result is not None:
+            logger.info(f"[{scan_id}] Served from in-memory cache")
+            return JSONResponse(content=result)
+
+        # ── 2. Fall back to PostgreSQL (covers completed scans after restart) ──
+        from backend.database import config as db_config
+        from backend.database.scan_models import ScanHistory, Repository, Vulnerability as VulnModel
+        from sqlalchemy import select
+
+        if not db_config.is_db_available() or not db_config.AsyncSessionLocal:
+            raise HTTPException(status_code=404, detail=f"Scan not found: {scan_id}")
+
+        async with db_config.AsyncSessionLocal() as db:
+            # Load scan + repo in one query
+            row = await db.execute(
+                select(ScanHistory, Repository.owner, Repository.name)
+                .join(Repository, ScanHistory.repository_id == Repository.id, isouter=True)
+                .where(ScanHistory.scan_id == scan_id)
+            )
+            record = row.first()
+
+            if not record:
+                logger.warning(f"[{scan_id}] Not found in DB either")
+                raise HTTPException(status_code=404, detail=f"Scan not found: {scan_id}")
+
+            scan, repo_owner, repo_name = record
+
+            # Load vulnerabilities for this scan
+            vuln_rows = await db.execute(
+                select(VulnModel).where(VulnModel.scan_id == scan.id)
+            )
+            vuln_records = vuln_rows.scalars().all()
+
+            vulnerabilities = []
+            for v in vuln_records:
+                vulnerabilities.append({
+                    "id":                   str(v.id),
+                    "rule_id":              v.rule_id or "",
+                    "scanner_name":         v.scanner_name or "",
+                    "severity":             (v.severity or "info").lower(),
+                    "message":              v.message or "",
+                    "vulnerability_type":   v.vulnerability_type or "",
+                    "confidence":           v.confidence or "",
+                    "file_path":            v.file_path or "",
+                    "start_line":           v.start_line or 0,
+                    "end_line":             v.end_line or 0,
+                    "code_snippet":         v.code_snippet or "",
+                    "cwe_ids":              v.cwe_ids or [],
+                    "owasp_categories":     v.owasp_categories or [],
+                })
+
+            severity_summary = {
+                "critical": scan.critical_count or 0,
+                "high":     scan.high_count or 0,
+                "medium":   scan.medium_count or 0,
+                "low":      scan.low_count or 0,
+                "info":     0,
+                "warning":  0,
+            }
+
+            completed_at = scan.completed_at
+            started_at   = scan.started_at or scan.queued_at
+
+            result = {
+                "scan_id":            str(scan.scan_id),
+                "repo_owner":         repo_owner or "unknown",
+                "repo_name":          repo_name  or "unknown",
+                "repo_url":           f"https://github.com/{repo_owner}/{repo_name}",
+                "status":             scan.status,
+                "vulnerabilities":    vulnerabilities,
+                "scanner_used":       scan.scanner_mode or "",
+                "total_issues":       scan.total_vulnerabilities or len(vulnerabilities),
+                "severity_summary":   severity_summary,
+                "detected_languages": scan.detected_languages or [],
+                "scan_duration":      scan.scan_duration_seconds,
+                "started_at":         started_at.isoformat()  if started_at   else None,
+                "completed_at":       completed_at.isoformat() if completed_at else None,
+                "error_message":      scan.error_message or None,
+            }
+
+            logger.info(f"[{scan_id}] Served from PostgreSQL — {len(vulnerabilities)} vulns")
+            return JSONResponse(content=result)
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[{scan_id}] Error retrieving scan result: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error retrieving scan result: {str(e)}")
 
 
 @router.get("/scans/{scan_id}/status", response_model=ScanStatus)
@@ -707,6 +905,7 @@ async def delete_scan_endpoint(scan_id: str):
 # DASHBOARD ENDPOINTS — unchanged
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @router.get("/dashboard/stats")
 async def get_dashboard_stats(request: Request):
     user_id = await get_user_id(request)
@@ -764,6 +963,7 @@ async def get_dashboard_stats(request: Request):
         return {"stats": {"totalRepos": 0, "totalScans": 0, "criticalVulns": 0,
                           "highVulns": 0, "mediumVulns": 0, "lowVulns": 0,
                           "filesScanned": 0, "recentAlerts": 0}}
+
 
 
 @router.get("/dashboard/trends")

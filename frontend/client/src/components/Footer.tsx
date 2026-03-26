@@ -1,5 +1,6 @@
 import { Shield, Github, Twitter, Linkedin, Heart } from 'lucide-react';
 import { Button } from "./ui/button";
+import  Logo  from './Logo';
 
 export function Footer() {
   return (
@@ -7,13 +8,9 @@ export function Footer() {
       <div className="container max-w-7xl mx-auto px-6 py-12">
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 mb-12">
           <div className="col-span-2 lg:col-span-2">
-            <div className="flex items-center gap-2 mb-4">
-              <Shield className="h-6 w-6 text-blue-500" />
-              <span className="text-xl font-bold text-white">ReVAMP</span>
-            </div>
+            <Logo className="mb-4" /> {/* Replaces Shield and text */}
             <p className="text-zinc-500 text-sm max-w-xs leading-relaxed">
-              Securing the internet, one repository at a time. 
-              Built for developers who care about code quality.
+             Securing the internet, one repository at a time...
             </p>
           </div>
           
