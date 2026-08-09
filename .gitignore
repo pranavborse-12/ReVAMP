@@ -28,6 +28,7 @@ out/
 # Other
 .DS_Store
 *.swp
+.repo_cache/
 
 # OS files
 desktop.ini

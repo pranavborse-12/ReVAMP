@@ -3,7 +3,7 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { CardBody, CardContainer, CardItem } from "./ui/3d-card";
 import { useEffect, useState } from "react";
-
+import { AuthService } from "../lib/auth";
 // Fake terminal code
 const CODE_SNIPPETS = [
   { text: "Scanning src/auth/login.ts...", color: "text-zinc-400" },
@@ -23,7 +23,7 @@ export function Hero() {
   }, []);
 
   const handleGetStarted = () => {
-    window.location.href = `${import.meta.env.VITE_API_URL || ''}/auth/github/login`;
+    AuthService.startGitHubAuth();
   };
 
   return (

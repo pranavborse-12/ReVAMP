@@ -14,7 +14,10 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from .config import logger, SEMGREP_TIMEOUT, SEMGREP_APP_TOKEN, LANGUAGE_EXTENSIONS
+from .config import (
+    logger, SEMGREP_TIMEOUT, SEMGREP_APP_TOKEN, LANGUAGE_EXTENSIONS,
+    SEMGREP_TIMEOUT_PER_FILE_MS, SEMGREP_TIMEOUT_MAX,
+)
 from .utils import normalize_severity, extract_vulnerability_type
 
 RULES_DIR = Path(__file__).parent / "semgrep_rules"
@@ -150,7 +153,16 @@ class SemgrepScanner:
         if not config_args:
             return [], "No rule files found — run download_rules.py + build_masters.py"
 
-        findings_json, error = self._run_scan(config_args=config_args, targets=[self.repo_path])
+        # Full scan targets a single directory — estimate file count so the
+        # timeout can scale with repo size instead of always using the fixed
+        # SEMGREP_TIMEOUT floor, which was observed timing out on a ~600-file
+        # multi-language repo (WebGoat).
+        estimated_files = self._estimate_target_file_count(self.repo_path)
+
+        findings_json, error = self._run_scan(
+            config_args=config_args, targets=[self.repo_path],
+            estimated_file_count=estimated_files,
+        )
         if error and not findings_json:
             return [], error
 
@@ -215,7 +227,10 @@ class SemgrepScanner:
             f"masters={len(config_args)//2}"
         )
 
-        findings_json, error = self._run_scan(config_args=config_args, targets=abs_targets)
+        findings_json, error = self._run_scan(
+            config_args=config_args, targets=abs_targets,
+            estimated_file_count=len(abs_targets),
+        )
         if error and not findings_json:
             return [], error
 
@@ -227,13 +242,62 @@ class SemgrepScanner:
     # CLI execution
     # ------------------------------------------------------------------
 
+    def _estimate_target_file_count(self, repo_path: str, cap: int = 5000) -> int:
+        """
+        Cheap estimate of how many files Semgrep will actually walk, used
+        to scale the overall subprocess timeout. Stops counting at `cap`
+        since we only need a rough scale factor, not an exact count —
+        walking a huge repo fully just to size a timeout would be wasteful.
+        Excludes the same directories Semgrep itself is told to --exclude,
+        so the estimate isn't inflated by node_modules/vendor/etc.
+        """
+        count = 0
+        skip_set = set(SKIP_DIRS)
+        try:
+            for root, dirs, files in os.walk(repo_path):
+                dirs[:] = [d for d in dirs if d not in skip_set]
+                count += len(files)
+                if count >= cap:
+                    return cap
+        except Exception as e:
+            logger.debug(f"Semgrep: file count estimation failed ({e}) — using default timeout")
+            return 0
+        return count
+
+    def _compute_timeout(self, estimated_file_count: int) -> int:
+        """
+        Scale the overall Semgrep subprocess timeout with target size,
+        instead of always using the fixed SEMGREP_TIMEOUT floor.
+
+        Fixed 300s was observed timing out on a ~600-file, 4-master
+        (java+javascript+devops+universal) full scan — and the timeout
+        was being silently reported as a clean "no issues found" pass
+        (see scanner_core.py fix). Scaling this doesn't fix that class of
+        repo forever (an even bigger repo will still eventually time out),
+        but it removes the most common, easily-hit case, and the ceiling
+        (SEMGREP_TIMEOUT_MAX) still bounds worst-case wall-clock time.
+        """
+        if estimated_file_count <= 0:
+            return SEMGREP_TIMEOUT
+        scaled = SEMGREP_TIMEOUT + int(estimated_file_count * SEMGREP_TIMEOUT_PER_FILE_MS / 1000)
+        return min(max(scaled, SEMGREP_TIMEOUT), SEMGREP_TIMEOUT_MAX)
+
     def _run_scan(
         self,
         config_args: List[str],
         targets: List[str],
+        estimated_file_count: int = 0,
     ) -> Tuple[Optional[Dict], str]:
         import multiprocessing
         jobs = min(multiprocessing.cpu_count(), 8)
+
+        effective_timeout = self._compute_timeout(estimated_file_count)
+        if effective_timeout != SEMGREP_TIMEOUT:
+            logger.info(
+                f"Semgrep: scaled timeout to {effective_timeout}s "
+                f"(~{estimated_file_count} files, floor={SEMGREP_TIMEOUT}s, "
+                f"ceiling={SEMGREP_TIMEOUT_MAX}s)"
+            )
 
         env = os.environ.copy()
         if self.token:
@@ -252,8 +316,16 @@ class SemgrepScanner:
             "--json",
             "--quiet",
             "--no-rewrite-rule-ids",
-            "--timeout", "5",
-            "--timeout-threshold", "1",
+            # Per-rule-per-file timeout. Was 5s/threshold=1, which meant a
+            # single slow rule-check on a single file would cause Semgrep
+            # to silently give up on further checks for that file — a
+            # subtler version of the same "reports success, under-delivers"
+            # problem as the outer timeout. 10s/threshold=3 gives slower
+            # files (large generated code, deeply nested matches) more
+            # room before being skipped, while still bounding worst-case
+            # per-file cost.
+            "--timeout", "10",
+            "--timeout-threshold", "3",
             "--max-memory", "1024",
             "--max-target-bytes", "500000",
             "--jobs", str(jobs),
@@ -275,7 +347,7 @@ class SemgrepScanner:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=SEMGREP_TIMEOUT,
+                timeout=effective_timeout,
                 env=env,
             )
 
@@ -303,7 +375,7 @@ class SemgrepScanner:
                 return None, f"Invalid JSON output: {result.stdout[:200]}"
 
         except subprocess.TimeoutExpired:
-            return None, f"Semgrep timed out after {SEMGREP_TIMEOUT}s"
+            return None, f"Semgrep timed out after {effective_timeout}s (~{estimated_file_count} files)"
         except FileNotFoundError:
             return None, "Semgrep CLI not found"
         except Exception as e:

@@ -27,12 +27,37 @@ SEMGREP_TIMEOUT = int(os.getenv("SEMGREP_TIMEOUT", "300"))
 CODEQL_ANALYZE_TIMEOUT = int(os.getenv("CODEQL_ANALYZE_TIMEOUT", "600"))
 CODEQL_DB_TIMEOUT = int(os.getenv("CODEQL_DB_TIMEOUT", "300"))
 
+# ── Incremental scan performance config (NEW) ──────────────────────────
+# Root dir where per-repo working clones are cached & reused across scans,
+# instead of a fresh tempfile.mkdtemp() + full clone on every incremental
+# scan. Falls back to a fresh temp clone if this dir or a specific repo's
+# cached clone is missing/corrupted.
+REPO_CACHE_DIR = os.getenv("REPO_CACHE_DIR", os.path.join(os.getcwd(), ".repo_cache"))
+
+# If a cached clone's on-disk size exceeds this, we discard and re-clone
+# fresh next time rather than let stale/bloated working dirs accumulate.
+REPO_CACHE_MAX_MB = int(os.getenv("REPO_CACHE_MAX_MB", "1000"))
+
+# `git fetch` timeout for reusing a cached clone (separate from full CLONE_TIMEOUT
+# since fetches on an existing repo should be much faster).
+FETCH_TIMEOUT = int(os.getenv("FETCH_TIMEOUT", "60"))
+
+# When GitHub's Compare API fails or the diff exceeds GITHUB_COMPARE_MAX_FILES,
+# fall back to a local `git diff --name-status` against the cached clone
+# instead of escalating straight to a full scan. This only works if a cached
+# clone exists for the repo (see REPO_CACHE_DIR) — if not, full scan is still
+# the correct fallback.
+LOCAL_DIFF_TIMEOUT = int(os.getenv("LOCAL_DIFF_TIMEOUT", "30"))
+
 # Scanner configuration
 SEMGREP_APP_TOKEN = os.getenv("SEMGREP_APP_TOKEN")
 CODEQL_LANGUAGES = {
     "java", "cpp", "csharp", "python", "javascript", 
     "go", "swift", "kotlin", "ruby", "typescript", "c"
 }
+
+SEMGREP_TIMEOUT_PER_FILE_MS = int(os.getenv("SEMGREP_TIMEOUT_PER_FILE_MS", "120"))
+SEMGREP_TIMEOUT_MAX = int(os.getenv("SEMGREP_TIMEOUT_MAX", "600"))
 
 # Extended Language detection - More comprehensive
 LANGUAGE_EXTENSIONS = {

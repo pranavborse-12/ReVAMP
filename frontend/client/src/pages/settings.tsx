@@ -1,9 +1,24 @@
-// src/pages/settings.tsx
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthProvider";
 import { User, Settings, Bell, Shield, Key, Mail, Github, LogOut, Check, AlertTriangle } from "lucide-react";
 
 const API = "http://localhost:8000";
+
+// ── Pure Black Enterprise Palette ──────────────────────────
+const C = {
+  bg:          "#000000",   // Pure black background
+  surface:     "#0a0a0a",   // Level 1 surface
+  surface2:    "#141414",   // Level 2 hover surface
+  border:      "#262626",   // Crisp borders
+  borderHover: "#3f3f46",   // Hover borders
+  text:        "#f4f4f5",   // High-contrast text
+  muted:       "#a1a1aa",   // Secondary text
+  subtle:      "#52525b",   // Placeholder / dim
+  accent:      "#3b82f6",   // Professional blue
+  danger:      "#ef4444",   // Destructive actions
+  success:     "#10b981",   // Success states
+  warning:     "#f59e0b",   // Warnings
+};
 
 const NAV_GROUPS = [
   {
@@ -33,29 +48,38 @@ const NAV_GROUPS = [
 // Read-only display field
 function ReadRow({ label, value, badge }: { label: string; value: string; badge?: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid #1e2030" }}>
-      <span style={{ fontSize: 12, color: "#718096", width: 160, flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: 13, color: "#a0aec0", flex: 1 }}>{value}</span>
+    <div style={{ display: "flex", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.border}` }}>
+      <span style={{ fontSize: 13, fontWeight: 500, color: C.muted, width: 200, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 13, color: C.text, flex: 1 }}>{value}</span>
       {badge}
     </div>
   );
 }
 
 function Divider() {
-  return <div style={{ borderTop: "1px solid #1e2030", margin: "28px 0" }} />;
+  return <div style={{ borderTop: `1px solid ${C.border}`, margin: "32px 0" }} />;
 }
 
 function SaveBtn({ onClick, saved }: { onClick: () => void; saved: boolean }) {
   return (
     <button onClick={onClick} style={{
-      padding: "8px 18px",
-      background: saved ? "rgba(6,214,160,0.15)" : "rgba(99,102,241,0.15)",
-      border: `1px solid ${saved ? "rgba(6,214,160,0.3)" : "rgba(99,102,241,0.3)"}`,
-      borderRadius: 6, color: saved ? "#06d6a0" : "#a5b4fc",
-      fontSize: 12, cursor: "pointer", fontFamily: "inherit",
-      display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s",
-    }}>
-      {saved ? <><Check style={{ width: 11, height: 11 }} /> Saved</> : "Save changes"}
+      padding: "8px 16px",
+      background: saved ? "transparent" : C.text,
+      border: `1px solid ${saved ? C.success : C.text}`,
+      borderRadius: 6, 
+      color: saved ? C.success : C.bg,
+      fontSize: 13, 
+      fontWeight: 500,
+      cursor: "pointer", 
+      display: "flex", 
+      alignItems: "center", 
+      gap: 8, 
+      transition: "all 0.2s ease",
+    }}
+    onMouseOver={(e) => { if(!saved) e.currentTarget.style.background = "#d4d4d8"; }}
+    onMouseOut={(e) => { if(!saved) e.currentTarget.style.background = C.text; }}
+    >
+      {saved ? <><Check size={14} strokeWidth={3} /> Saved</> : "Save changes"}
     </button>
   );
 }
@@ -63,10 +87,14 @@ function SaveBtn({ onClick, saved }: { onClick: () => void; saved: boolean }) {
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
   return (
     <button onClick={onChange} style={{
-      width: 40, height: 22, borderRadius: 11, border: "none", cursor: "pointer",
-      position: "relative", background: on ? "#6366f1" : "#1e2030", transition: "background 0.2s",
+      width: 36, height: 20, borderRadius: 10, border: "none", cursor: "pointer",
+      position: "relative", background: on ? C.accent : C.border, transition: "background 0.2s ease",
     }}>
-      <div style={{ position: "absolute", top: 2, left: on ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#e2e8f0", transition: "left 0.2s" }} />
+      <div style={{ 
+        position: "absolute", top: 2, left: on ? 18 : 2, width: 16, height: 16, 
+        borderRadius: "50%", background: "#fff", transition: "left 0.2s cubic-bezier(0.4, 0.0, 0.2, 1)",
+        boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
+      }} />
     </button>
   );
 }
@@ -126,63 +154,66 @@ export default function SettingsPage() {
   const initials = user?.email?.[0]?.toUpperCase() || "U";
 
   const inputStyle: React.CSSProperties = {
-    width: "100%", background: "#0f111a", border: "1px solid #1e2030",
-    borderRadius: 6, padding: "8px 12px", color: "#e2e8f0", fontSize: 13,
+    width: "100%", background: C.surface, border: `1px solid ${C.border}`,
+    borderRadius: 6, padding: "8px 12px", color: C.text, fontSize: 13,
     outline: "none", boxSizing: "border-box", fontFamily: "inherit",
+    transition: "border-color 0.15s ease, background 0.15s ease",
   };
 
   const readonlyStyle: React.CSSProperties = {
-    ...inputStyle, background: "#060709", color: "#4a5568", cursor: "default",
+    ...inputStyle, background: "transparent", color: C.muted, cursor: "default", borderStyle: "dashed",
   };
 
   const fieldWrap = (label: string, children: React.ReactNode, desc?: string) => (
-    <div style={{ marginBottom: 20 }}>
-      <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 6 }}>{label}</label>
+    <div style={{ marginBottom: 24 }}>
+      <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 8 }}>{label}</label>
       {children}
-      {desc && <p style={{ fontSize: 11, color: "#4a5568", marginTop: 5, lineHeight: 1.6 }}>{desc}</p>}
+      {desc && <p style={{ fontSize: 12, color: C.subtle, marginTop: 6, lineHeight: 1.5 }}>{desc}</p>}
     </div>
   );
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", width: "100%", background: "#0a0a0f", color: "#e2e8f0", fontFamily: "'JetBrains Mono','Fira Code',monospace" }}>
+    <div style={{ display: "flex", minHeight: "100vh", width: "100%", background: C.bg, color: C.text, fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
 
       {/* ── Sidebar ── */}
-      <div style={{ width: 220, flexShrink: 0, borderRight: "1px solid #1e2030", padding: "24px 12px", display: "flex", flexDirection: "column" }}>
+      <div style={{ width: 260, flexShrink: 0, borderRight: `1px solid ${C.border}`, padding: "32px 16px", display: "flex", flexDirection: "column" }}>
 
         {/* Identity */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 8px 20px", borderBottom: "1px solid #1e2030", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 12px 24px", borderBottom: `1px solid ${C.border}`, marginBottom: 24 }}>
           {gh?.avatar_url
-            ? <img src={gh.avatar_url} alt="avatar" style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
-            : <div style={{ width: 32, height: 32, borderRadius: 6, background: "#1e2030", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: "#6366f1", flexShrink: 0 }}>{initials}</div>
+            ? <img src={gh.avatar_url} alt="avatar" style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: `1px solid ${C.border}` }} />
+            : <div style={{ width: 36, height: 36, borderRadius: 8, background: C.surface, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 600, color: C.accent, flexShrink: 0, border: `1px solid ${C.border}` }}>{initials}</div>
           }
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {gh?.login || user?.email?.split("@")[0] || "User"}
             </div>
-            <div style={{ fontSize: 10, color: "#4a5568" }}>Personal account</div>
+            <div style={{ fontSize: 12, color: C.subtle }}>Personal account</div>
           </div>
         </div>
 
         {/* Nav */}
         <nav style={{ flex: 1 }}>
           {NAV_GROUPS.map((group, gi) => (
-            <div key={gi} style={{ marginBottom: 20 }}>
+            <div key={gi} style={{ marginBottom: 24 }}>
               {group.label && (
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#4a5568", textTransform: "uppercase", letterSpacing: "0.12em", padding: "0 8px", marginBottom: 4 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: C.subtle, textTransform: "uppercase", letterSpacing: "0.05em", padding: "0 12px", marginBottom: 8 }}>
                   {group.label}
                 </div>
               )}
               {group.items.map(item => (
                 <button key={item.id} onClick={() => setActiveId(item.id)} style={{
-                  width: "100%", display: "flex", alignItems: "center", gap: 8,
-                  padding: "7px 10px", borderRadius: 6, border: "none", cursor: "pointer",
-                  fontFamily: "inherit", fontSize: 12, textAlign: "left", marginBottom: 1,
-                  background: activeId === item.id ? "rgba(99,102,241,0.12)" : "transparent",
-                  color: activeId === item.id ? "#a5b4fc" : "#718096",
-                  borderLeft: activeId === item.id ? "2px solid #6366f1" : "2px solid transparent",
-                  transition: "all 0.1s",
-                }}>
-                  {item.icon && <item.icon style={{ width: 13, height: 13, flexShrink: 0 }} />}
+                  width: "100%", display: "flex", alignItems: "center", gap: 10,
+                  padding: "8px 12px", borderRadius: 6, border: "none", cursor: "pointer",
+                  fontFamily: "inherit", fontSize: 13, fontWeight: activeId === item.id ? 500 : 400, textAlign: "left", marginBottom: 2,
+                  background: activeId === item.id ? C.surface : "transparent",
+                  color: activeId === item.id ? C.text : C.muted,
+                  transition: "all 0.15s ease",
+                }}
+                onMouseOver={(e) => { if(activeId !== item.id) e.currentTarget.style.color = C.text; }}
+                onMouseOut={(e) => { if(activeId !== item.id) e.currentTarget.style.color = C.muted; }}
+                >
+                  {item.icon && <item.icon size={16} strokeWidth={activeId === item.id ? 2.5 : 2} style={{ flexShrink: 0, color: activeId === item.id ? C.accent : "inherit" }} />}
                   {item.label}
                 </button>
               ))}
@@ -191,31 +222,33 @@ export default function SettingsPage() {
         </nav>
 
         {/* Sign out */}
-        <div style={{ borderTop: "1px solid #1e2030", paddingTop: 16 }}>
+        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 24 }}>
           <button onClick={logout} style={{
-            width: "100%", display: "flex", alignItems: "center", gap: 8,
-            padding: "7px 10px", borderRadius: 6, border: "none", cursor: "pointer",
-            fontFamily: "inherit", fontSize: 12, background: "transparent", color: "#4a5568", transition: "color 0.15s",
+            width: "100%", display: "flex", alignItems: "center", gap: 10,
+            padding: "8px 12px", borderRadius: 6, border: "none", cursor: "pointer",
+            fontFamily: "inherit", fontSize: 13, fontWeight: 500, background: "transparent", color: C.muted, transition: "color 0.15s, background 0.15s",
           }}
-            onMouseEnter={e => (e.currentTarget.style.color = "#ff4d4d")}
-            onMouseLeave={e => (e.currentTarget.style.color = "#4a5568")}
+            onMouseOver={e => { e.currentTarget.style.color = C.danger; e.currentTarget.style.background = "rgba(239, 68, 68, 0.05)"; }}
+            onMouseOut={e => { e.currentTarget.style.color = C.muted; e.currentTarget.style.background = "transparent"; }}
           >
-            <LogOut style={{ width: 13, height: 13 }} /> Sign out
+            <LogOut size={16} /> Sign out
           </button>
         </div>
       </div>
 
       {/* ── Content ── */}
-      <div style={{ flex: 1, padding: "32px 48px", overflowY: "auto", minWidth: 0 }}>
+      <div style={{ flex: 1, padding: "40px 64px", overflowY: "auto", minWidth: 0, maxWidth: "1000px" }}>
 
         {/* PUBLIC PROFILE */}
         {activeId === "profile" && (
-          <>
-            <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 24px", color: "#e2e8f0" }}>Public profile</h2>
-            <div style={{ display: "flex", gap: 32 }}>
-              <div style={{ flex: 1 }}>
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            <h2 style={{ fontSize: 24, fontWeight: 600, margin: "0 0 32px", color: C.text, letterSpacing: "-0.02em" }}>Public profile</h2>
+            <div style={{ display: "flex", gap: 48, flexWrap: "wrap-reverse" }}>
+              <div style={{ flex: 1, minWidth: 300 }}>
                 {fieldWrap("Name",
-                  <input value={profileName} onChange={e => setProfileName(e.target.value)} placeholder="Your display name" style={inputStyle} />,
+                  <input value={profileName} onChange={e => setProfileName(e.target.value)} placeholder="Your display name" style={inputStyle} 
+                  onFocus={(e) => { e.target.style.borderColor = C.accent; e.target.style.background = C.bg; }}
+                  onBlur={(e) => { e.target.style.borderColor = C.border; e.target.style.background = C.surface; }}/>,
                   "Your name may appear around ReVAMP where you contribute or are mentioned."
                 )}
                 {fieldWrap("Email",
@@ -223,7 +256,9 @@ export default function SettingsPage() {
                   "This is your primary account email used for authentication."
                 )}
                 {fieldWrap("Bio",
-                  <textarea value={profileBio} onChange={e => setProfileBio(e.target.value)} placeholder="Tell others about yourself..." rows={4} style={{ ...inputStyle, resize: "vertical" }} />,
+                  <textarea value={profileBio} onChange={e => setProfileBio(e.target.value)} placeholder="Tell others about yourself..." rows={4} style={{ ...inputStyle, resize: "vertical" }} 
+                  onFocus={(e) => { e.target.style.borderColor = C.accent; e.target.style.background = C.bg; }}
+                  onBlur={(e) => { e.target.style.borderColor = C.border; e.target.style.background = C.surface; }}/>,
                   "Tell others a little about yourself."
                 )}
                 {fieldWrap("GitHub username",
@@ -231,52 +266,58 @@ export default function SettingsPage() {
                   "Fetched from your GitHub account — cannot be changed here."
                 )}
                 {fieldWrap("GitHub profile URL",
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ display: "flex", gap: 12 }}>
                     <input value={gh ? `https://github.com/${gh.login}` : "Loading..."} readOnly style={{ ...readonlyStyle, flex: 1 }} />
                     {gh?.login && (
                       <a href={`https://github.com/${gh.login}`} target="_blank" rel="noreferrer"
-                        style={{ padding: "8px 14px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: 6, color: "#a5b4fc", fontSize: 12, textDecoration: "none", flexShrink: 0, display: "flex", alignItems: "center" }}>
-                        View →
+                        style={{ padding: "8px 16px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, fontSize: 13, fontWeight: 500, textDecoration: "none", flexShrink: 0, display: "flex", alignItems: "center", transition: "all 0.15s" }}
+                        onMouseOver={(e) => { e.currentTarget.style.borderColor = C.borderHover; e.currentTarget.style.background = C.surface2; }}
+                        onMouseOut={(e) => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = C.surface; }}
+                      >
+                        Visit Profile ↗
                       </a>
                     )}
                   </div>
                 )}
                 <Divider />
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                   <SaveBtn onClick={save} saved={saved} />
-                  <span style={{ fontSize: 11, color: "#4a5568" }}>Name and bio are saved locally.</span>
+                  <span style={{ fontSize: 12, color: C.subtle }}>Name and bio are saved locally.</span>
                 </div>
               </div>
 
               {/* Avatar */}
-              <div style={{ width: 140, flexShrink: 0 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0", marginBottom: 10 }}>Profile picture</div>
+              <div style={{ width: 200, flexShrink: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 16 }}>Profile picture</div>
                 {gh?.avatar_url
-                  ? <img src={gh.avatar_url} alt="avatar" style={{ width: 100, height: 100, borderRadius: "50%", objectFit: "cover", border: "2px solid #1e2030", display: "block", marginBottom: 10 }} />
-                  : <div style={{ width: 100, height: 100, borderRadius: "50%", background: "#1e2030", border: "2px solid #2d3154", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36, fontWeight: 800, color: "#6366f1", marginBottom: 10 }}>{initials}</div>
+                  ? <img src={gh.avatar_url} alt="avatar" style={{ width: 160, height: 160, borderRadius: "50%", objectFit: "cover", border: `1px solid ${C.border}`, display: "block", marginBottom: 16 }} />
+                  : <div style={{ width: 160, height: 160, borderRadius: "50%", background: C.surface, border: `1px dashed ${C.borderHover}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48, fontWeight: 600, color: C.muted, marginBottom: 16 }}>{initials}</div>
                 }
-                <div style={{ fontSize: 10, color: "#4a5568", lineHeight: 1.6 }}>Sourced from your GitHub account.</div>
-                {gh?.location && <div style={{ fontSize: 11, color: "#718096", marginTop: 8 }}>📍 {gh.location}</div>}
+                <div style={{ fontSize: 12, color: C.subtle, lineHeight: 1.5 }}>Sourced directly from your GitHub account profile.</div>
+                {gh?.location && <div style={{ fontSize: 12, color: C.muted, marginTop: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                  {gh.location}
+                </div>}
               </div>
             </div>
-          </>
+          </div>
         )}
 
         {/* ACCOUNT */}
         {activeId === "account" && (
-          <>
-            <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 4px", color: "#e2e8f0" }}>Account</h2>
-            <p style={{ fontSize: 13, color: "#4a5568", margin: "0 0 24px", lineHeight: 1.7 }}>
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            <h2 style={{ fontSize: 24, fontWeight: 600, margin: "0 0 8px", color: C.text, letterSpacing: "-0.02em" }}>Account</h2>
+            <p style={{ fontSize: 14, color: C.muted, margin: "0 0 32px", lineHeight: 1.6 }}>
               These details come from GitHub OAuth and are read-only. To change them, update your{" "}
-              <a href="https://github.com/settings/profile" target="_blank" rel="noreferrer" style={{ color: "#6366f1", textDecoration: "none" }}>GitHub profile →</a>
+              <a href="https://github.com/settings/profile" target="_blank" rel="noreferrer" style={{ color: C.accent, textDecoration: "none" }}>GitHub profile ↗</a>
             </p>
 
-            <div style={{ border: "1px solid #1e2030", borderRadius: 8, overflow: "hidden", marginBottom: 24 }}>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 32 }}>
               <ReadRow label="GitHub username"  value={gh?.login || "—"} />
               <ReadRow label="Display name"     value={gh?.name || "Not set"} />
               <ReadRow label="Email address"    value={user?.email || "—"}
                 badge={user?.email_verified
-                  ? <span style={{ fontSize: 10, padding: "2px 8px", background: "rgba(6,214,160,0.1)", color: "#06d6a0", border: "1px solid rgba(6,214,160,0.2)", borderRadius: 10, display: "flex", alignItems: "center", gap: 4 }}><Check style={{ width: 9, height: 9 }} /> Verified</span>
+                  ? <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", background: "rgba(16, 185, 129, 0.1)", color: C.success, border: "1px solid rgba(16, 185, 129, 0.2)", borderRadius: 4, display: "flex", alignItems: "center", gap: 4 }}><Check size={12} strokeWidth={3} /> Verified</span>
                   : undefined}
               />
               <ReadRow label="Member since"    value={memberSince(user?.created_at)} />
@@ -286,48 +327,50 @@ export default function SettingsPage() {
 
             <Divider />
 
-            <div style={{ border: "1px solid rgba(255,77,77,0.2)", borderRadius: 8, overflow: "hidden" }}>
-              <div style={{ background: "rgba(255,77,77,0.06)", padding: "12px 16px", borderBottom: "1px solid rgba(255,77,77,0.2)", display: "flex", alignItems: "center", gap: 6 }}>
-                <AlertTriangle style={{ width: 13, height: 13, color: "#ff4d4d" }} />
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#ff4d4d" }}>Danger zone</span>
-              </div>
-              <div style={{ padding: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+              <div style={{ padding: "20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24 }}>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 3 }}>Delete this account</div>
-                  <div style={{ fontSize: 12, color: "#4a5568" }}>Once deleted, all your scan data is permanently removed.</div>
+                  <div style={{ fontSize: 15, fontWeight: 500, color: C.text, marginBottom: 4 }}>Delete account</div>
+                  <div style={{ fontSize: 13, color: C.subtle }}>Permanently remove your account and all associated scan data. This action cannot be undone.</div>
                 </div>
-                <button style={{ padding: "7px 14px", background: "transparent", border: "1px solid rgba(255,77,77,0.4)", borderRadius: 6, color: "#ff4d4d", fontSize: 12, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+                <button style={{ 
+                  padding: "8px 16px", background: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: 6, 
+                  color: C.danger, fontSize: 13, fontWeight: 500, cursor: "pointer", flexShrink: 0, transition: "all 0.15s ease" 
+                }}
+                onMouseOver={e => { e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)"; }}
+                onMouseOut={e => { e.currentTarget.style.background = "rgba(239, 68, 68, 0.05)"; }}
+                >
                   Delete account
                 </button>
               </div>
             </div>
-          </>
+          </div>
         )}
 
         {/* NOTIFICATIONS */}
         {activeId === "notifications" && (
-          <>
-            <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px", color: "#e2e8f0" }}>Notifications</h2>
-            <p style={{ fontSize: 13, color: "#4a5568", margin: "0 0 28px", lineHeight: 1.7 }}>Choose what you want to be notified about. Email delivery requires SMTP configuration.</p>
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            <h2 style={{ fontSize: 24, fontWeight: 600, margin: "0 0 8px", color: C.text, letterSpacing: "-0.02em" }}>Notifications</h2>
+            <p style={{ fontSize: 14, color: C.muted, margin: "0 0 32px", lineHeight: 1.6 }}>Choose what you want to be notified about. Email delivery requires SMTP configuration.</p>
             {[
               { section: "Scanning", items: [
-                { key: "scanComplete",  label: "Scan complete",            desc: "When a repository scan finishes running" },
-                { key: "criticalVulns", label: "Critical vulnerabilities", desc: "When CRITICAL severity issues are detected" },
+                { key: "scanComplete",  label: "Scan completion",          desc: "Receive an alert when a repository scan finishes running." },
+                { key: "criticalVulns", label: "Critical vulnerabilities", desc: "Get notified immediately if CRITICAL severity issues are detected." },
               ]},
               { section: "Reports", items: [
-                { key: "weeklyReport", label: "Weekly security report", desc: "A summary digest sent every Monday" },
-                { key: "newFeatures",  label: "Product updates",        desc: "New features and platform announcements" },
+                { key: "weeklyReport", label: "Weekly security digest", desc: "A summary digest of your codebase security sent every Monday." },
+                { key: "newFeatures",  label: "Product updates",        desc: "New features, engine updates, and platform announcements." },
               ]},
             ].map(group => (
-              <div key={group.section} style={{ marginBottom: 28 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#4a5568", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4, paddingBottom: 8, borderBottom: "1px solid #1e2030" }}>
+              <div key={group.section} style={{ marginBottom: 32 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 8, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
                   {group.section}
                 </div>
                 {group.items.map(({ key, label, desc }) => (
-                  <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0", borderBottom: "1px solid #1a1a2e" }}>
-                    <div>
-                      <div style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 2 }}>{label}</div>
-                      <div style={{ fontSize: 11, color: "#4a5568" }}>{desc}</div>
+                  <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 0", borderBottom: `1px solid ${C.border}` }}>
+                    <div style={{ paddingRight: 32 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: C.text, marginBottom: 4 }}>{label}</div>
+                      <div style={{ fontSize: 13, color: C.muted }}>{desc}</div>
                     </div>
                     <Toggle on={notifications[key as keyof typeof notifications]} onChange={() => toggle(key as keyof typeof notifications)} />
                   </div>
@@ -335,91 +378,110 @@ export default function SettingsPage() {
               </div>
             ))}
             <SaveBtn onClick={save} saved={saved} />
-          </>
+          </div>
         )}
 
         {/* EMAILS */}
         {activeId === "emails" && (
-          <>
-            <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px", color: "#e2e8f0" }}>Emails</h2>
-            <p style={{ fontSize: 13, color: "#4a5568", margin: "0 0 28px", lineHeight: 1.7 }}>Manage your email addresses associated with your account.</p>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 6 }}>Primary email address</label>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input value={user?.email || ""} readOnly style={{ ...readonlyStyle, flex: 1 }} />
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            <h2 style={{ fontSize: 24, fontWeight: 600, margin: "0 0 8px", color: C.text, letterSpacing: "-0.02em" }}>Emails</h2>
+            <p style={{ fontSize: 14, color: C.muted, margin: "0 0 32px", lineHeight: 1.6 }}>Manage the email addresses associated with your account.</p>
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 8 }}>Primary email address</label>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <input value={user?.email || ""} readOnly style={{ ...readonlyStyle, flex: 1, maxWidth: 400 }} />
                 {user?.email_verified && (
-                  <span style={{ fontSize: 11, padding: "4px 10px", background: "rgba(6,214,160,0.1)", color: "#06d6a0", border: "1px solid rgba(6,214,160,0.2)", borderRadius: 6, display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                    <Check style={{ width: 10, height: 10 }} /> Primary
+                  <span style={{ fontSize: 12, fontWeight: 500, padding: "4px 10px", background: "rgba(16, 185, 129, 0.1)", color: C.success, border: "1px solid rgba(16, 185, 129, 0.2)", borderRadius: 6, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                    <Check size={14} strokeWidth={3} /> Primary Address
                   </span>
                 )}
               </div>
             </div>
-            <div style={{ background: "rgba(99,102,241,0.05)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: 8, padding: "14px 16px", fontSize: 12, color: "#718096", lineHeight: 1.7 }}>
-              ℹ Your email is sourced from GitHub OAuth and cannot be changed here. Update it on GitHub and sign in again to reflect changes.
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px", display: "flex", gap: 16, alignItems: "flex-start" }}>
+              <AlertTriangle size={18} color={C.muted} style={{ flexShrink: 0, marginTop: 2 }} />
+              <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6 }}>
+                Your email is sourced directly from your connected GitHub OAuth app. It cannot be changed here. To update your email, change it in your GitHub settings and sign in again.
+              </div>
             </div>
-          </>
+          </div>
         )}
 
         {/* SECURITY */}
         {activeId === "security" && (
-          <>
-            <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px", color: "#e2e8f0" }}>Password and authentication</h2>
-            <p style={{ fontSize: 13, color: "#4a5568", margin: "0 0 28px", lineHeight: 1.7 }}>Your account uses GitHub OAuth — no password is stored by ReVAMP.</p>
-            <div style={{ border: "1px solid #1e2030", borderRadius: 8, overflow: "hidden", marginBottom: 20 }}>
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            <h2 style={{ fontSize: 24, fontWeight: 600, margin: "0 0 8px", color: C.text, letterSpacing: "-0.02em" }}>Authentication & Security</h2>
+            <p style={{ fontSize: 14, color: C.muted, margin: "0 0 32px", lineHeight: 1.6 }}>Your account is secured via GitHub OAuth. No passwords are stored locally.</p>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 24 }}>
               {[
-                { label: "GitHub OAuth 2.0", sub: "Passwordless, secure authentication", badge: <span style={{ fontSize: 10, padding: "3px 9px", background: "rgba(6,214,160,0.1)", color: "#06d6a0", border: "1px solid rgba(6,214,160,0.2)", borderRadius: 10 }}>Active</span> },
-                { label: "Two-factor authentication", sub: "Managed by your GitHub account settings", badge: <a href="https://github.com/settings/security" target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#6366f1", textDecoration: "none" }}>Configure on GitHub →</a> },
-                { label: "Access token", sub: "GitHub token expires after 8 hours · Read-only repo access", badge: <span style={{ fontSize: 10, padding: "3px 9px", background: "rgba(255,209,102,0.1)", color: "#ffd166", border: "1px solid rgba(255,209,102,0.2)", borderRadius: 10 }}>Read only</span> },
+                { label: "GitHub OAuth 2.0", sub: "Passwordless, secure authentication", badge: <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", background: "rgba(16, 185, 129, 0.1)", color: C.success, border: "1px solid rgba(16, 185, 129, 0.2)", borderRadius: 4 }}>Active</span> },
+                { label: "Two-factor authentication", sub: "Managed entirely by your GitHub account settings", badge: <a href="https://github.com/settings/security" target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 500, color: C.accent, textDecoration: "none" }}>Configure on GitHub ↗</a> },
+                { label: "Access Token", sub: "GitHub token expires after 8 hours · Read-only repo access", badge: <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", background: "rgba(245, 158, 11, 0.1)", color: C.warning, border: "1px solid rgba(245, 158, 11, 0.2)", borderRadius: 4 }}>Read Only</span> },
               ].map((row, i, arr) => (
-                <div key={row.label} style={{ padding: "14px 16px", borderBottom: i < arr.length - 1 ? "1px solid #1e2030" : "none", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div key={row.label} style={{ padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>{row.label}</div>
-                    <div style={{ fontSize: 11, color: "#4a5568", marginTop: 2 }}>{row.sub}</div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: C.text }}>{row.label}</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>{row.sub}</div>
                   </div>
                   {row.badge}
                 </div>
               ))}
             </div>
-          </>
+          </div>
         )}
 
         {/* SESSIONS */}
         {activeId === "sessions" && (
-          <>
-            <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px", color: "#e2e8f0" }}>Sessions</h2>
-            <p style={{ fontSize: 13, color: "#4a5568", margin: "0 0 28px", lineHeight: 1.7 }}>Devices that have logged into your account. Revoke any sessions you don't recognize.</p>
-            <div style={{ border: "1px solid #1e2030", borderRadius: 8, padding: 16, marginBottom: 20 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>Current session</div>
-                <span style={{ fontSize: 9, padding: "2px 8px", background: "rgba(6,214,160,0.1)", color: "#06d6a0", border: "1px solid rgba(6,214,160,0.2)", borderRadius: 10 }}>Active now</span>
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            <h2 style={{ fontSize: 24, fontWeight: 600, margin: "0 0 8px", color: C.text, letterSpacing: "-0.02em" }}>Active Sessions</h2>
+            <p style={{ fontSize: 14, color: C.muted, margin: "0 0 32px", lineHeight: 1.6 }}>Manage the devices that are currently logged into your account.</p>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: 20, marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: C.text }}>Current Session</div>
+                  <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", background: "rgba(16, 185, 129, 0.1)", color: C.success, border: "1px solid rgba(16, 185, 129, 0.2)", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Active Now</span>
+                </div>
+                <div style={{ fontSize: 13, color: C.muted }}>Authenticated via GitHub OAuth · {toLocal(user?.last_login)}</div>
               </div>
-              <div style={{ fontSize: 11, color: "#4a5568" }}>Last login: {toLocal(user?.last_login)}</div>
             </div>
-            <button onClick={logout} style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 16px", background: "transparent", border: "1px solid rgba(255,77,77,0.3)", borderRadius: 6, color: "#ff4d4d", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-              <LogOut style={{ width: 12, height: 12 }} /> Sign out of all sessions
+            <button onClick={logout} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", background: "transparent", border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: 6, color: C.danger, fontSize: 13, fontWeight: 500, cursor: "pointer", transition: "background 0.15s ease" }}
+             onMouseOver={e => { e.currentTarget.style.background = "rgba(239, 68, 68, 0.05)"; }}
+             onMouseOut={e => { e.currentTarget.style.background = "transparent"; }}
+            >
+              <LogOut size={16} /> Revoke all sessions
             </button>
-          </>
+          </div>
         )}
 
         {/* GITHUB APPS */}
         {activeId === "github-apps" && (
-          <>
-            <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px", color: "#e2e8f0" }}>GitHub Apps</h2>
-            <p style={{ fontSize: 13, color: "#4a5568", margin: "0 0 28px", lineHeight: 1.7 }}>Applications connected to your account via GitHub OAuth.</p>
-            <div style={{ border: "1px solid #1e2030", borderRadius: 8, padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 8, background: "#1e2030", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Shield style={{ width: 20, height: 20, color: "#6366f1" }} />
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            <h2 style={{ fontSize: 24, fontWeight: 600, margin: "0 0 8px", color: C.text, letterSpacing: "-0.02em" }}>Authorized Applications</h2>
+            <p style={{ fontSize: 14, color: C.muted, margin: "0 0 32px", lineHeight: 1.6 }}>Third-party applications connected to your account via GitHub OAuth.</p>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: 20, display: "flex", alignItems: "flex-start", gap: 16 }}>
+              <div style={{ width: 48, height: 48, borderRadius: 8, background: C.surface, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Shield size={24} color={C.text} />
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>ReVAMP</div>
-                <div style={{ fontSize: 11, color: "#4a5568", marginTop: 2 }}>Security scanning platform · repo (read) access</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>ReVAMP Security Engine</div>
+                  <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", background: "rgba(16, 185, 129, 0.1)", color: C.success, border: "1px solid rgba(16, 185, 129, 0.2)", borderRadius: 4 }}>Connected</span>
+                </div>
+                <div style={{ fontSize: 13, color: C.muted, marginBottom: 8 }}>Security scanning platform providing vulnerability analysis.</div>
+                <div style={{ fontSize: 12, color: C.subtle, fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>Permissions: repo (read-only), user:email</div>
               </div>
-              <span style={{ fontSize: 10, padding: "3px 9px", background: "rgba(6,214,160,0.1)", color: "#06d6a0", border: "1px solid rgba(6,214,160,0.2)", borderRadius: 10 }}>Connected</span>
             </div>
-          </>
+          </div>
         )}
 
       </div>
+
+      {/* Basic Keyframes for smooth tab switching */}
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }
